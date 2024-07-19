@@ -1,0 +1,13 @@
+using http, html.(p)
+
+hello(context, name):
+    p("Hello, {name}!")
+
+router(route, context):
+    case route:
+        {"hello", name}: hello(context, name)
+
+http.server(router)
+http.serve(_, port: 8080)
+
+# localhost:8080/hello/Frank => <p>Hello, Frank!</p>
