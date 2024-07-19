@@ -327,6 +327,10 @@ type StringPart struct {
 	Value string
 }
 
+type PubExpression struct {
+	Public Expression
+}
+
 type AssignmentExpression struct {
 	Name  *Identifier
 	Value Expression
@@ -337,7 +341,7 @@ type CaseExpression struct {
 }
 
 type BlockExpression struct {
-	body []Expression
+	Body []Expression
 }
 
 type Case struct {
@@ -411,6 +415,7 @@ func parse(tokens *Stream[Token]) Program {
 	prefixParseFns[CASE] = parseCaseExpression
 	prefixParseFns[STRING_START] = parseStringExpression
 	prefixParseFns[USING] = parseUsingExpression
+	prefixParseFns[PUB] = parsePubExpression
 
 	infixParseFns[PLUS] = parseInfixExpression
 	infixParseFns[MINUS] = parseInfixExpression
@@ -442,6 +447,13 @@ const (
 	PREFIX
 	CALL
 )
+
+func parsePubExpression(tokens *Stream[Token]) Expression {
+	expr := &PubExpression{}
+	tokens.consume(1)
+	expr.Public = parseExpression(tokens, LOWEST)
+	return expr
+}
 
 func parseUsingExpression(tokens *Stream[Token]) Expression {
 	tokens.consume(1)
@@ -527,7 +539,7 @@ func parseBlockExpression(tokens *Stream[Token]) Expression {
 	block := &BlockExpression{}
 	if !isToken(tokens, EOL, 0) {
 		expr := parseExpression(tokens, LOWEST)
-		block.body = []Expression{expr}
+		block.Body = []Expression{expr}
 		return block
 	}
 	tokens.consume(1)
@@ -546,7 +558,7 @@ func parseBlockExpression(tokens *Stream[Token]) Expression {
 		if tok.Type == DEDENT && tok.Value == indentLevel {
 			break
 		}
-		block.body = append(block.body, parseExpression(tokens, LOWEST))
+		block.Body = append(block.Body, parseExpression(tokens, LOWEST))
 		tokens.consume(1)
 	}
 	return block
