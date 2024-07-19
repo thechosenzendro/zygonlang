@@ -302,70 +302,101 @@ func tokenize(sourceCode string) Stream[Token] {
 	return tokens
 }
 
-type Expression interface{}
+type Node interface{}
+
+type Expression interface {
+	Node
+	Expr()
+}
+
+type Statement interface {
+	Node
+	Stmt()
+}
+
 type Program struct {
-	Body []Expression
+	Body []Node
 }
 
 type Identifier struct {
 	Value []string
 }
 
-type Number struct {
+func (Identifier) Expr() {}
+
+type NumberLiteral struct {
 	Value float64
 }
 
-type Boolean struct {
+func (NumberLiteral) Expr() {}
+
+type BooleanLiteral struct {
 	Value bool
 }
 
-type String struct {
+func (BooleanLiteral) Expr() {}
+
+type StringLiteral struct {
 	Parts []Expression
 }
+
+func (StringLiteral) Expr() {}
 
 type StringPart struct {
 	Value string
 }
 
-type PubExpression struct {
+func (s StringPart) Expr() {}
+
+type PubStatement struct {
 	Public Expression
 }
 
-type AssignmentExpression struct {
-	Name  *Identifier
+func (PubStatement) Stmt() {}
+
+type AssignmentStatement struct {
+	Name  Identifier
 	Value Expression
 }
 
+func (AssignmentStatement) Stmt() {}
+
 type CaseExpression struct {
-	Cases []Case
+	Cases []struct {
+		Pattern Expression
+		Block   Block
+	}
 }
 
-type BlockExpression struct {
+func (CaseExpression) Expr() {}
+
+type Block struct {
 	Body []Expression
 }
 
-type Case struct {
-	Pattern Expression
-	Block   BlockExpression
-}
-
-type UsingExpression struct {
+type UsingStatement struct {
 	Modules []struct {
 		Module  Identifier
 		Symbols []Identifier
 	}
 }
 
+func (UsingStatement) Stmt() {}
+
 type PrefixExpression struct {
 	Operator string
 	Right    Expression
 }
+
+func (PrefixExpression) Expr() {}
 
 type InfixExpression struct {
 	Left     Expression
 	Operator string
 	Right    Expression
 }
+
+func (InfixExpression) Expr() {}
 
 type (
 	prefixParseFn func(*Stream[Token]) Expression
@@ -404,18 +435,18 @@ func parseGroupedExpression(tokens *Stream[Token]) Expression {
 }
 
 func parse(tokens *Stream[Token]) Program {
-	program := Program{Body: []Expression{}}
+	program := Program{Body: []Node{}}
 	prefixParseFns[IDENT] = parseIdentifier
-	prefixParseFns[NUM] = parseNumber
+	prefixParseFns[NUM] = parseNumberLiteral
 	prefixParseFns[NOT] = parsePrefixExpression
 	prefixParseFns[MINUS] = parsePrefixExpression
-	prefixParseFns[TRUE] = parseBoolean
-	prefixParseFns[FALSE] = parseBoolean
+	prefixParseFns[TRUE] = parseBooleanLiteral
+	prefixParseFns[FALSE] = parseBooleanLiteral
 	prefixParseFns[LPAREN] = parseGroupedExpression
 	prefixParseFns[CASE] = parseCaseExpression
-	prefixParseFns[STRING_START] = parseStringExpression
-	prefixParseFns[USING] = parseUsingExpression
-	prefixParseFns[PUB] = parsePubExpression
+	prefixParseFns[STRING_START] = parseStringLiteral
+	//prefixParseFns[USING] = parseUsingExpression
+	//prefixParseFns[PUB] = parsePubExpression
 
 	infixParseFns[PLUS] = parseInfixExpression
 	infixParseFns[MINUS] = parseInfixExpression
@@ -428,7 +459,15 @@ func parse(tokens *Stream[Token]) Program {
 	infixParseFns[OR] = parseInfixExpression
 	for tokens.peek(0).Type != EOF {
 		if tokens.peek(0).Type != EOL {
-			program.Body = append(program.Body, parseExpression(tokens, LOWEST))
+			var node Node = nil
+			if isToken(tokens, USING, 0) {
+				node = parseUsingStatement(tokens)
+			} else if true {
+				node = parsePubStatement(tokens)
+			} else {
+				node = parseExpression(tokens, LOWEST)
+			}
+			program.Body = append(program.Body, node)
 		}
 		tokens.consume(1)
 	}
@@ -448,20 +487,20 @@ const (
 	CALL
 )
 
-func parsePubExpression(tokens *Stream[Token]) Expression {
-	expr := &PubExpression{}
+func parsePubStatement(tokens *Stream[Token]) Statement {
+	stmt := &PubStatement{}
 	tokens.consume(1)
-	expr.Public = parseExpression(tokens, LOWEST)
-	return expr
+	stmt.Public = parseExpression(tokens, LOWEST)
+	return stmt
 }
 
-func parseUsingExpression(tokens *Stream[Token]) Expression {
+func parseUsingStatement(tokens *Stream[Token]) Statement {
 	tokens.consume(1)
-	expr := &UsingExpression{}
+	stmt := &UsingStatement{}
 	for {
-		if tokens.peek(0).Type == EOL {
+		if isToken(tokens, EOL, 0) {
 			break
-		} else if tokens.peek(0).Type == IDENT {
+		} else if isToken(tokens, IDENT, 0) {
 			mod := struct {
 				Module  Identifier
 				Symbols []Identifier
@@ -488,13 +527,13 @@ func parseUsingExpression(tokens *Stream[Token]) Expression {
 				tokens.consume(1)
 			}
 
-			expr.Modules = append(expr.Modules, mod)
+			stmt.Modules = append(stmt.Modules, mod)
 		} else if isToken(tokens, COMMA, 0) {
 			tokens.consume(1)
 		}
 
 	}
-	return expr
+	return stmt
 }
 
 func parseCaseExpression(tokens *Stream[Token]) Expression {
@@ -525,18 +564,21 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 			log.Fatal("no colon in case expression")
 		}
 		tokens.consume(1)
-		block := parseBlockExpression(tokens).(*BlockExpression)
+		block := parseBlockExpression(tokens)
 		tokens.consume(1)
 		if isToken(tokens, EOL, 0) {
 			tokens.consume(1)
 		}
-		expr.Cases = append(expr.Cases, Case{pattern, *block})
+		expr.Cases = append(expr.Cases, struct {
+			Pattern Expression
+			Block   Block
+		}{pattern, block})
 	}
 	return expr
 }
 
-func parseBlockExpression(tokens *Stream[Token]) Expression {
-	block := &BlockExpression{}
+func parseBlockExpression(tokens *Stream[Token]) Block {
+	block := Block{}
 	if !isToken(tokens, EOL, 0) {
 		expr := parseExpression(tokens, LOWEST)
 		block.Body = []Expression{expr}
@@ -564,11 +606,11 @@ func parseBlockExpression(tokens *Stream[Token]) Expression {
 	return block
 }
 
-func parseBoolean(tokens *Stream[Token]) Expression {
-	if tokens.peek(0).Type == TRUE {
-		return &Boolean{true}
+func parseBooleanLiteral(tokens *Stream[Token]) Expression {
+	if isToken(tokens, TRUE, 0) {
+		return &BooleanLiteral{true}
 	} else {
-		return &Boolean{false}
+		return &BooleanLiteral{false}
 	}
 }
 
@@ -584,7 +626,7 @@ func parseIsExpression(tokens *Stream[Token], left Expression) Expression {
 	expr := &InfixExpression{Left: left, Operator: IS}
 	precedence := getPrecedence(*tokens.peek(0))
 	tokens.consume(1)
-	if tokens.peek(0).Type == NOT {
+	if isToken(tokens, NOT, 0) {
 		expr.Operator = IS_NOT
 		tokens.consume(1)
 	}
@@ -599,26 +641,26 @@ func parsePrefixExpression(tokens *Stream[Token]) Expression {
 	return expr
 }
 
-func parseNumber(tokens *Stream[Token]) Expression {
+func parseNumberLiteral(tokens *Stream[Token]) Expression {
 	num, err := strconv.ParseFloat(tokens.peek(0).Value, 64)
 	if err != nil {
 		log.Fatal(err)
 	}
-	return Number{num}
+	return NumberLiteral{num}
 }
 
 func parseIdentifier(tokens *Stream[Token]) Expression {
 	return Identifier{strings.Split(tokens.peek(0).Value, ".")}
 }
 
-func parseStringExpression(tokens *Stream[Token]) Expression {
+func parseStringLiteral(tokens *Stream[Token]) Expression {
 	tokens.consume(1)
-	expr := String{}
+	expr := StringLiteral{}
 	for {
-		if tokens.peek(0).Type == STRING_END {
+		if isToken(tokens, STRING_END, 0) {
 			tokens.consume(1)
 			break
-		} else if tokens.peek(0).Type == STRING_PART {
+		} else if isToken(tokens, STRING_PART, 0) {
 			expr.Parts = append(expr.Parts, StringPart{tokens.peek(0).Value})
 			tokens.consume(1)
 		} else {
