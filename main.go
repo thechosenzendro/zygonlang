@@ -377,6 +377,7 @@ var precedences = map[TokenType]int{
 	SLASH:        PRODUCT,
 	AND:          ANDPrec,
 	OR:           ORPrec,
+	DOT:          Chain,
 }
 
 func getPrecedence(token Token) int {
@@ -417,6 +418,8 @@ func parse(tokens *Stream[Token]) Program {
 	infixParseFns[LESSER_THAN] = parseInfixExpression
 	infixParseFns[AND] = parseInfixExpression
 	infixParseFns[OR] = parseInfixExpression
+	// not sure about this
+	infixParseFns[DOT] = parseInfixExpression
 	for tokens.peek(0).Type != EOF {
 		if tokens.peek(0).Type != EOL {
 			program.Body = append(program.Body, parseExpression(tokens, LOWEST))
@@ -436,6 +439,7 @@ const (
 	SUM
 	PRODUCT
 	PREFIX
+	Chain
 	CALL
 )
 
