@@ -375,6 +375,8 @@ var precedences = map[TokenType]int{
 	MINUS:        SUM,
 	STAR:         PRODUCT,
 	SLASH:        PRODUCT,
+	AND:          ANDPrec,
+	OR:           ORPrec,
 }
 
 func getPrecedence(token Token) int {
@@ -427,6 +429,8 @@ func parse(tokens *Stream[Token]) Program {
 const (
 	_ int = iota
 	LOWEST
+	ORPrec
+	ANDPrec
 	EQUALS
 	LESSGREATER
 	SUM
