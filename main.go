@@ -99,6 +99,7 @@ func tokenize(sourceCode string) Stream[Token] {
 	parenLevel := 0
 	braceLevel := 0
 	indentLevel := []int{0}
+	stringInterpolationOpened := false
 	for source.peek(0) != nil {
 		switch {
 
@@ -154,13 +155,17 @@ func tokenize(sourceCode string) Stream[Token] {
 			}
 			tokens.Contents = append(tokens.Contents, Token{NUM, string(buf)})
 
-		case *source.peek(0) == '"':
-			// add {} syntax
+		case *source.peek(0) == '}' && stringInterpolationOpened:
 			source.consume(1)
-			tokens.Contents = append(tokens.Contents, Token{STRING_START, ""})
+			stringInterpolationOpened = false
 			buf := []rune{}
 			for {
 				if *source.peek(0) == '"' {
+					break
+				} else if *source.peek(0) == '{' {
+					tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
+					stringInterpolationOpened = true
+					source.consume(1)
 					break
 				} else if *source.peek(0) == '\\' {
 					source.consume(1)
@@ -171,9 +176,38 @@ func tokenize(sourceCode string) Stream[Token] {
 					source.consume(1)
 				}
 			}
+			if !stringInterpolationOpened {
+				source.consume(1)
+				tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
+				tokens.Contents = append(tokens.Contents, Token{STRING_END, ""})
+			}
+		case *source.peek(0) == '"':
+			// add {} syntax
 			source.consume(1)
-			tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
-			tokens.Contents = append(tokens.Contents, Token{STRING_END, ""})
+			tokens.Contents = append(tokens.Contents, Token{STRING_START, ""})
+			buf := []rune{}
+			for {
+				if *source.peek(0) == '"' {
+					break
+				} else if *source.peek(0) == '{' {
+					tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
+					stringInterpolationOpened = true
+					source.consume(1)
+					break
+				} else if *source.peek(0) == '\\' {
+					source.consume(1)
+					buf = append(buf, *source.peek(0))
+					source.consume(1)
+				} else {
+					buf = append(buf, *source.peek(0))
+					source.consume(1)
+				}
+			}
+			if !stringInterpolationOpened {
+				source.consume(1)
+				tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
+				tokens.Contents = append(tokens.Contents, Token{STRING_END, ""})
+			}
 
 		case *source.peek(0) != '\n' && unicode.IsSpace(*source.peek(0)):
 			source.consume(1)
