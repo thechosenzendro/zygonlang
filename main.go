@@ -182,7 +182,6 @@ func tokenize(sourceCode string) Stream[Token] {
 				tokens.Contents = append(tokens.Contents, Token{STRING_END, ""})
 			}
 		case *source.peek(0) == '"':
-			// add {} syntax
 			source.consume(1)
 			tokens.Contents = append(tokens.Contents, Token{STRING_START, ""})
 			buf := []rune{}
@@ -324,6 +323,14 @@ type Boolean struct {
 	Value bool
 }
 
+type String struct {
+	Parts []Expression
+}
+
+type StringPart struct {
+	Value string
+}
+
 type AssignmentExpression struct {
 	Name  *Identifier
 	Value Expression
@@ -358,7 +365,6 @@ type (
 	infixParseFn  func(*Stream[Token], Expression) Expression
 )
 
-var errors []string
 var prefixParseFns = map[TokenType]prefixParseFn{}
 var infixParseFns = map[TokenType]infixParseFn{}
 var precedences = map[TokenType]int{
@@ -398,12 +404,12 @@ func parse(tokens *Stream[Token]) Program {
 	prefixParseFns[FALSE] = parseBoolean
 	prefixParseFns[LPAREN] = parseGroupedExpression
 	prefixParseFns[CASE] = parseCaseExpression
+	prefixParseFns[STRING_START] = parseStringExpression
 
 	infixParseFns[PLUS] = parseInfixExpression
 	infixParseFns[MINUS] = parseInfixExpression
 	infixParseFns[STAR] = parseInfixExpression
 	infixParseFns[SLASH] = parseInfixExpression
-	// figure out the is not conundrum
 	infixParseFns[IS] = parseIsExpression
 	infixParseFns[GREATER_THAN] = parseInfixExpression
 	infixParseFns[LESSER_THAN] = parseInfixExpression
@@ -541,6 +547,24 @@ func parseNumber(tokens *Stream[Token]) Expression {
 
 func parseIdentifier(tokens *Stream[Token]) Expression {
 	return Identifier{tokens.peek(0).Value}
+}
+
+func parseStringExpression(tokens *Stream[Token]) Expression {
+	tokens.consume(1)
+	expr := String{}
+	for {
+		if tokens.peek(0).Type == STRING_END {
+			tokens.consume(1)
+			break
+		} else if tokens.peek(0).Type == STRING_PART {
+			expr.Parts = append(expr.Parts, StringPart{tokens.peek(0).Value})
+			tokens.consume(1)
+		} else {
+			expr.Parts = append(expr.Parts, parseExpression(tokens, LOWEST))
+			tokens.consume(1)
+		}
+	}
+	return expr
 }
 
 func parseExpression(tokens *Stream[Token], precedence int) Expression {
