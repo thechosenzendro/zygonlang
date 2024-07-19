@@ -114,7 +114,7 @@ func tokenize(sourceCode string) Stream[Token] {
 			if string(buf) == "case" {
 				tokens.Contents = append(tokens.Contents, Token{CASE, "case"})
 			} else if string(buf) == "is" {
-				tokens.Contents = append(tokens.Contents, Token{IS, "case"})
+				tokens.Contents = append(tokens.Contents, Token{IS, "is"})
 			} else if string(buf) == "not" {
 				tokens.Contents = append(tokens.Contents, Token{NOT, "not"})
 			} else if string(buf) == "and" {
@@ -376,7 +376,9 @@ func parse(tokens *Stream[Token]) Program {
 	infixParseFns[AND] = parseInfixExpression
 	infixParseFns[OR] = parseInfixExpression
 	for tokens.peek(0).Type != EOF {
-		program.Body = append(program.Body, parseExpression(tokens, LOWEST))
+		if tokens.peek(0).Type != EOL {
+			program.Body = append(program.Body, parseExpression(tokens, LOWEST))
+		}
 		tokens.consume(1)
 	}
 	return program
