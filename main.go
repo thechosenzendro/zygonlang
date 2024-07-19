@@ -296,8 +296,7 @@ type AssignmentExpression struct {
 }
 
 type CaseExpression struct {
-	Subject Expression
-	Cases   []Case
+	Cases []Case
 }
 
 type BlockExpression struct {
@@ -399,9 +398,6 @@ const (
 func parseCaseExpression(tokens *Stream[Token]) Expression {
 	expr := &CaseExpression{}
 	tokens.consume(1)
-	//Should we even have subjects?
-	//expr.Subject = parseExpression(tokens, LOWEST)
-	//tokens.consume(1)
 	if !isToken(tokens, COLON, 0) {
 		log.Fatal("no colon in case expression")
 	}
