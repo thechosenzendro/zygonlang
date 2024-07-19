@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"unicode"
 
 	"github.com/davecgh/go-spew/spew"
@@ -109,7 +110,7 @@ func tokenize(sourceCode string) Stream[Token] {
 			}
 		case unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_':
 			buf := []rune{}
-			for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_') {
+			for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_' || *source.peek(0) == '.') {
 				buf = append(buf, *source.peek(0))
 				source.consume(1)
 			}
@@ -312,7 +313,7 @@ type Program struct {
 }
 
 type Identifier struct {
-	Value string
+	Value []string
 }
 
 type Number struct {
@@ -349,6 +350,9 @@ type Case struct {
 	Block   BlockExpression
 }
 
+type UsingExpression struct {
+}
+
 type PrefixExpression struct {
 	Operator string
 	Right    Expression
@@ -375,9 +379,8 @@ var precedences = map[TokenType]int{
 	MINUS:        SUM,
 	STAR:         PRODUCT,
 	SLASH:        PRODUCT,
-	AND:          ANDPrec,
-	OR:           ORPrec,
-	DOT:          Chain,
+	AND:          ANDPREC,
+	OR:           ORPREC,
 }
 
 func getPrecedence(token Token) int {
@@ -408,6 +411,7 @@ func parse(tokens *Stream[Token]) Program {
 	prefixParseFns[LPAREN] = parseGroupedExpression
 	prefixParseFns[CASE] = parseCaseExpression
 	prefixParseFns[STRING_START] = parseStringExpression
+	prefixParseFns[USING] = parseUsingExpression
 
 	infixParseFns[PLUS] = parseInfixExpression
 	infixParseFns[MINUS] = parseInfixExpression
@@ -418,8 +422,6 @@ func parse(tokens *Stream[Token]) Program {
 	infixParseFns[LESSER_THAN] = parseInfixExpression
 	infixParseFns[AND] = parseInfixExpression
 	infixParseFns[OR] = parseInfixExpression
-	// not sure about this
-	infixParseFns[DOT] = parseInfixExpression
 	for tokens.peek(0).Type != EOF {
 		if tokens.peek(0).Type != EOL {
 			program.Body = append(program.Body, parseExpression(tokens, LOWEST))
@@ -432,16 +434,20 @@ func parse(tokens *Stream[Token]) Program {
 const (
 	_ int = iota
 	LOWEST
-	ORPrec
-	ANDPrec
+	ORPREC
+	ANDPREC
 	EQUALS
 	LESSGREATER
 	SUM
 	PRODUCT
 	PREFIX
-	Chain
 	CALL
 )
+
+func parseUsingExpression(tokens *Stream[Token]) Expression {
+	tokens.consume(1)
+	return &UsingExpression{}
+}
 
 func parseCaseExpression(tokens *Stream[Token]) Expression {
 	expr := &CaseExpression{}
@@ -554,7 +560,7 @@ func parseNumber(tokens *Stream[Token]) Expression {
 }
 
 func parseIdentifier(tokens *Stream[Token]) Expression {
-	return Identifier{tokens.peek(0).Value}
+	return Identifier{strings.Split(tokens.peek(0).Value, ".")}
 }
 
 func parseStringExpression(tokens *Stream[Token]) Expression {
