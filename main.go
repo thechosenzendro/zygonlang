@@ -66,7 +66,6 @@ const (
 	DEDENT       = "DEDENT"
 	LBRACE       = "LBRACE"
 	RBRACE       = "RBRACE"
-	DOT          = "DOT"
 	CASE         = "CASE"
 	STRING_START = "STRING_START"
 	STRING_PART  = "STRING_PART"
@@ -245,10 +244,6 @@ func tokenize(sourceCode string) Stream[Token] {
 				}
 			}
 
-		case *source.peek(0) == '.':
-			tokens.Contents = append(tokens.Contents, Token{DOT, "."})
-			source.consume(1)
-
 		case *source.peek(0) == '(':
 			parenLevel += 1
 			tokens.Contents = append(tokens.Contents, Token{LPAREN, strconv.Itoa(parenLevel)})
@@ -351,6 +346,10 @@ type Case struct {
 }
 
 type UsingExpression struct {
+	Modules []struct {
+		Module  Identifier
+		Symbols []Identifier
+	}
 }
 
 type PrefixExpression struct {
@@ -446,7 +445,44 @@ const (
 
 func parseUsingExpression(tokens *Stream[Token]) Expression {
 	tokens.consume(1)
-	return &UsingExpression{}
+	expr := &UsingExpression{}
+	for {
+		if tokens.peek(0).Type == EOL {
+			break
+		} else if tokens.peek(0).Type == IDENT {
+			mod := struct {
+				Module  Identifier
+				Symbols []Identifier
+			}{Module: parseIdentifier(tokens).(Identifier)}
+
+			tokens.consume(1)
+
+			// means ident ends with a dot
+			if mod.Module.Value[len(mod.Module.Value)-1] == "" {
+				if !isToken(tokens, LPAREN, 0) {
+					log.Fatal("no left paren in using")
+				}
+				tokens.consume(1)
+				for {
+					if isToken(tokens, RPAREN, 0) {
+						break
+					} else if isToken(tokens, IDENT, 0) {
+						mod.Symbols = append(mod.Symbols, parseIdentifier(tokens).(Identifier))
+						tokens.consume(1)
+					} else if isToken(tokens, COMMA, 0) {
+						tokens.consume(1)
+					}
+				}
+				tokens.consume(1)
+			}
+
+			expr.Modules = append(expr.Modules, mod)
+		} else if isToken(tokens, COMMA, 0) {
+			tokens.consume(1)
+		}
+
+	}
+	return expr
 }
 
 func parseCaseExpression(tokens *Stream[Token]) Expression {
