@@ -14,8 +14,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	tokens := tokenize(string(sourceCode))
+	// the parser needs to parse indents correctly
+	tokens := tokenize(string(sourceCode) + "\n")
 	log.Println(tokens)
 
 	ast := parse(&tokens)
@@ -74,6 +74,7 @@ const (
 	STAR         = "STAR"
 	SLASH        = "SLASH"
 	IS           = "IS"
+	IS_NOT       = "IS_NOT"
 	NOT          = "NOT"
 	AND          = "AND"
 	OR           = "OR"
@@ -370,7 +371,7 @@ func parse(tokens *Stream[Token]) Program {
 	infixParseFns[STAR] = parseInfixExpression
 	infixParseFns[SLASH] = parseInfixExpression
 	// figure out the is not conundrum
-	infixParseFns[IS] = parseInfixExpression
+	infixParseFns[IS] = parseIsExpression
 	infixParseFns[GREATER_THAN] = parseInfixExpression
 	infixParseFns[LESSER_THAN] = parseInfixExpression
 	infixParseFns[AND] = parseInfixExpression
@@ -398,8 +399,9 @@ const (
 func parseCaseExpression(tokens *Stream[Token]) Expression {
 	expr := &CaseExpression{}
 	tokens.consume(1)
-	expr.Subject = parseExpression(tokens, LOWEST)
-	tokens.consume(1)
+	//Should we even have subjects?
+	//expr.Subject = parseExpression(tokens, LOWEST)
+	//tokens.consume(1)
 	if !isToken(tokens, COLON, 0) {
 		log.Fatal("no colon in case expression")
 	}
@@ -476,6 +478,18 @@ func parseInfixExpression(tokens *Stream[Token], left Expression) Expression {
 	expr := &InfixExpression{Left: left, Operator: string(tokens.peek(0).Type)}
 	precedence := getPrecedence(*tokens.peek(0))
 	tokens.consume(1)
+	expr.Right = parseExpression(tokens, precedence)
+	return expr
+}
+
+func parseIsExpression(tokens *Stream[Token], left Expression) Expression {
+	expr := &InfixExpression{Left: left, Operator: IS}
+	precedence := getPrecedence(*tokens.peek(0))
+	tokens.consume(1)
+	if tokens.peek(0).Type == NOT {
+		expr.Operator = IS_NOT
+		tokens.consume(1)
+	}
 	expr.Right = parseExpression(tokens, precedence)
 	return expr
 }

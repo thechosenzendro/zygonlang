@@ -1,1 +1,4 @@
-x is not y
+case:
+    x is 1: 1
+    x is not 2: else
+    _: 3
