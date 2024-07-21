@@ -415,6 +415,7 @@ var precedences = map[TokenType]int{
 	SLASH:        PRODUCT,
 	AND:          ANDPREC,
 	OR:           ORPREC,
+	LPAREN:       CALL,
 }
 
 func getPrecedence(token Token) int {
@@ -442,7 +443,7 @@ func parse(tokens *Stream[Token]) Program {
 	prefixParseFns[MINUS] = parsePrefixExpression
 	prefixParseFns[TRUE] = parseBooleanLiteral
 	prefixParseFns[FALSE] = parseBooleanLiteral
-	prefixParseFns[LPAREN] = parseGroupedExpression
+	prefixParseFns[LPAREN] = resolveLParen
 	prefixParseFns[CASE] = parseCaseExpression
 	prefixParseFns[STRING_START] = parseStringLiteral
 
@@ -455,6 +456,7 @@ func parse(tokens *Stream[Token]) Program {
 	infixParseFns[LESSER_THAN] = parseInfixExpression
 	infixParseFns[AND] = parseInfixExpression
 	infixParseFns[OR] = parseInfixExpression
+	infixParseFns[LPAREN] = parseFunction
 	for tokens.peek(0).Type != EOF {
 		if tokens.peek(0).Type != EOL {
 			var node Node = nil
@@ -487,6 +489,123 @@ const (
 	CALL
 )
 
+func resolveLParen(tokens *Stream[Token]) Expression {
+	i := 0
+	parenLevel := tokens.peek(0).Value
+
+	for !(isToken(tokens, RPAREN, i) && tokens.peek(0).Value == parenLevel) {
+		i += 1
+	}
+	i += 1
+	if isToken(tokens, COLON, i) {
+		return parseFunction(tokens, nil)
+	} else {
+		return parseGroupedExpression(tokens)
+	}
+}
+
+type FunctionDeclaration struct {
+	Name       *Identifier
+	Parameters []struct {
+		Name    Identifier
+		Default Expression
+	}
+	Body Block
+}
+
+func (FunctionDeclaration) Expr() {}
+
+type FunctionCall struct {
+	Fn        Expression
+	Arguments []struct {
+		Name  Identifier
+		Value Expression
+	}
+}
+
+func (FunctionCall) Expr() {}
+
+func parseFunction(tokens *Stream[Token], fn Expression) Expression {
+	isDeclaration := false
+	if fn == nil {
+		isDeclaration = true
+	} else {
+		i := 0
+		parenLevel := tokens.peek(0).Value
+
+		for !(isToken(tokens, RPAREN, i) && tokens.peek(0).Value == parenLevel) {
+			i += 1
+		}
+		i += 1
+		if isToken(tokens, COLON, i) {
+			isDeclaration = true
+		}
+	}
+	if isDeclaration {
+		expr := FunctionDeclaration{}
+		if fn != nil {
+			switch fn := fn.(type) {
+			case Identifier:
+				expr.Name = &fn
+			}
+		} else {
+			expr.Name = nil
+		}
+		parenLevel := tokens.peek(0).Value
+		tokens.consume(1)
+		for !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
+			if isToken(tokens, IDENT, 0) {
+				parameter := struct {
+					Name    Identifier
+					Default Expression
+				}{}
+				parameter.Name = parseIdentifier(tokens).(Identifier)
+				tokens.consume(1)
+				if isToken(tokens, COLON, 0) {
+					tokens.consume(1)
+					parameter.Default = parseExpression(tokens, LOWEST)
+					tokens.consume(1)
+				}
+				expr.Parameters = append(expr.Parameters, parameter)
+			} else if isToken(tokens, COMMA, 0) {
+				tokens.consume(1)
+			}
+		}
+		tokens.consume(1)
+		if !isToken(tokens, COLON, 0) {
+			log.Fatal("no colon in function declaration")
+		}
+		tokens.consume(1)
+		expr.Body = parseBlock(tokens)
+		return expr
+	} else {
+		expr := FunctionCall{}
+		expr.Fn = fn
+
+		parenLevel := tokens.peek(0).Value
+		tokens.consume(1)
+		for !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
+			if isToken(tokens, IDENT, 0) {
+				argument := struct {
+					Name  Identifier
+					Value Expression
+				}{}
+				argument.Name = parseIdentifier(tokens).(Identifier)
+				tokens.consume(1)
+				if isToken(tokens, COLON, 0) {
+					tokens.consume(1)
+					argument.Value = parseExpression(tokens, LOWEST)
+					tokens.consume(1)
+				}
+				expr.Arguments = append(expr.Arguments, argument)
+			} else if isToken(tokens, COMMA, 0) {
+				tokens.consume(1)
+			}
+		}
+		return expr
+	}
+}
+
 func parseAssignmentStatement(tokens *Stream[Token]) Statement {
 	stmt := AssignmentStatement{}
 	stmt.Name = parseIdentifier(tokens).(Identifier)
@@ -499,7 +618,7 @@ func parseAssignmentStatement(tokens *Stream[Token]) Statement {
 
 	tokens.consume(1)
 
-	stmt.Value = parseBlockExpression(tokens)
+	stmt.Value = parseBlock(tokens)
 
 	return stmt
 }
@@ -585,7 +704,7 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 			log.Fatal("no colon in case expression")
 		}
 		tokens.consume(1)
-		block := parseBlockExpression(tokens)
+		block := parseBlock(tokens)
 		tokens.consume(1)
 		if isToken(tokens, EOL, 0) {
 			tokens.consume(1)
@@ -598,7 +717,7 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 	return expr
 }
 
-func parseBlockExpression(tokens *Stream[Token]) Block {
+func parseBlock(tokens *Stream[Token]) Block {
 	block := Block{}
 	if !isToken(tokens, EOL, 0) {
 		expr := parseExpression(tokens, LOWEST)
