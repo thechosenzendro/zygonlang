@@ -1,6 +1,6 @@
 Program [DONE]
 
-Identifier
+Identifier [DONE]
 
 NumberLiteral [DONE]
 
@@ -12,12 +12,18 @@ TextPart [DONE]
 
 PubStatement
 
-AssignmentStatement
+AssignmentStatement [DONE]
 
-CaseExpression
+CaseExpression [DONE]
 
 UsingStatement
 
 PrefixExpression [DONE]
 
-InfixExpression
+InfixExpression [DONE]
+
+FunctionDeclaration
+
+FunctionCall
+
+TableLiteral

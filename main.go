@@ -23,7 +23,10 @@ func main() {
 	ast := parse(&tokens)
 	spew.Dump(ast)
 
-	eval(ast)
+	env := &Enviroment{make(map[string]Value)}
+
+	res := eval(ast, env)
+	log.Println(res.Inspect())
 }
 
 type Stream[T comparable] struct {
@@ -387,6 +390,36 @@ type InfixExpression struct {
 
 func (InfixExpression) Expr() {}
 
+type FunctionDeclaration struct {
+	Name       *Identifier
+	Parameters []struct {
+		Name    Identifier
+		Default Expression
+	}
+	Body Block
+}
+
+func (FunctionDeclaration) Expr() {}
+
+type FunctionCall struct {
+	Fn        Expression
+	Arguments []struct {
+		Name  *Identifier
+		Value Expression
+	}
+}
+
+func (FunctionCall) Expr() {}
+
+type TableLiteral struct {
+	Entries []struct {
+		Key   *Identifier
+		Value Expression
+	}
+}
+
+func (TableLiteral) Expr() {}
+
 type (
 	prefixParseFn func(*Stream[Token]) Expression
 	infixParseFn  func(*Stream[Token], Expression) Expression
@@ -493,27 +526,6 @@ func resolveLParen(tokens *Stream[Token]) Expression {
 		return parseGroupedExpression(tokens)
 	}
 }
-
-type FunctionDeclaration struct {
-	Name       *Identifier
-	Parameters []struct {
-		Name    Identifier
-		Default Expression
-	}
-	Body Block
-}
-
-func (FunctionDeclaration) Expr() {}
-
-type FunctionCall struct {
-	Fn        Expression
-	Arguments []struct {
-		Name  *Identifier
-		Value Expression
-	}
-}
-
-func (FunctionCall) Expr() {}
 
 func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 	isDeclaration := false
@@ -677,15 +689,6 @@ func parseUsingStatement(tokens *Stream[Token]) Statement {
 	}
 	return stmt
 }
-
-type TableLiteral struct {
-	Entries []struct {
-		Key   *Identifier
-		Value Expression
-	}
-}
-
-func (TableLiteral) Expr() {}
 
 func parseTableLiteral(tokens *Stream[Token]) Expression {
 	expr := TableLiteral{}
@@ -915,13 +918,26 @@ type Text struct {
 func (s Text) Type() string    { return TEXT }
 func (s Text) Inspect() string { return s.Value }
 
-func eval(node Node) Value {
-	switch node := node.(type) {
+type Enviroment struct {
+	Store map[string]Value
+}
+
+func (e *Enviroment) Get(name string) (Value, bool) {
+	val, ok := e.Store[name]
+	return val, ok
+}
+
+func (e *Enviroment) Set(name string, val Value) Value {
+	e.Store[name] = val
+	return val
+}
+
+func eval(_node Node, env *Enviroment) Value {
+	switch node := _node.(type) {
 	case Program:
 		var res Value
 		for _, nd := range node.Body {
-			res = eval(nd)
-			log.Println(res)
+			res = eval(nd, env)
 		}
 		return res
 	case NumberLiteral:
@@ -935,12 +951,12 @@ func eval(node Node) Value {
 			case TextPart:
 				str = str + part.Value
 			default:
-				str = str + eval(part).Inspect()
+				str = str + eval(part, env).Inspect()
 			}
 		}
 		return Text{str}
 	case PrefixExpression:
-		right := eval(node.Right)
+		right := eval(node.Right, env)
 		switch node.Operator {
 		case NOT:
 			switch right := right.(type) {
@@ -956,8 +972,8 @@ func eval(node Node) Value {
 			}
 		}
 	case InfixExpression:
-		left := eval(node.Left)
-		right := eval(node.Right)
+		left := eval(node.Left, env)
+		right := eval(node.Right, env)
 		if left.Type() == NUMBER && right.Type() == NUMBER {
 			switch node.Operator {
 			case PLUS:
@@ -981,6 +997,36 @@ func eval(node Node) Value {
 		case IS_NOT:
 			return Boolean{left != right}
 		}
+	case Block:
+		var res Value
+		for _, nd := range node.Body {
+			res = eval(nd, env)
+		}
+		return res
+
+	case CaseExpression:
+		for _, _case := range node.Cases {
+			pattern := eval(_case.Pattern, env)
+			if pattern.Type() != BOOL {
+				log.Fatal("pattern result is not a boolean")
+			}
+			if pattern.Inspect() == "true" {
+				return eval(_case.Block, env)
+			}
+		}
+		panic("No truthy case in case expr")
+	case AssignmentStatement:
+		val := eval(node.Value, env)
+		env.Set(node.Name.Value[0], val)
+		return nil
+	case Identifier:
+		val, ok := env.Get(node.Value[0])
+		if !ok {
+			log.Fatal("identifier ", node.Value[0])
+		}
+		return val
+	default:
+		log.Fatalf("eval error %T", node)
 	}
-	panic("eval error")
+	panic("uhoh")
 }
