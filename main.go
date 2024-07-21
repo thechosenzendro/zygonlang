@@ -349,14 +349,14 @@ type StringPart struct {
 func (s StringPart) Expr() {}
 
 type PubStatement struct {
-	Public Expression
+	Public Node
 }
 
 func (PubStatement) Stmt() {}
 
 type AssignmentStatement struct {
 	Name  Identifier
-	Value Expression
+	Value Block
 }
 
 func (AssignmentStatement) Stmt() {}
@@ -445,8 +445,6 @@ func parse(tokens *Stream[Token]) Program {
 	prefixParseFns[LPAREN] = parseGroupedExpression
 	prefixParseFns[CASE] = parseCaseExpression
 	prefixParseFns[STRING_START] = parseStringLiteral
-	//prefixParseFns[USING] = parseUsingExpression
-	//prefixParseFns[PUB] = parsePubExpression
 
 	infixParseFns[PLUS] = parseInfixExpression
 	infixParseFns[MINUS] = parseInfixExpression
@@ -460,9 +458,11 @@ func parse(tokens *Stream[Token]) Program {
 	for tokens.peek(0).Type != EOF {
 		if tokens.peek(0).Type != EOL {
 			var node Node = nil
-			if isToken(tokens, USING, 0) {
+			if isToken(tokens, IDENT, 0) && isToken(tokens, COLON, 1) {
+				node = parseAssignmentStatement(tokens)
+			} else if isToken(tokens, USING, 0) {
 				node = parseUsingStatement(tokens)
-			} else if true {
+			} else if isToken(tokens, PUB, 0) {
 				node = parsePubStatement(tokens)
 			} else {
 				node = parseExpression(tokens, LOWEST)
@@ -487,10 +487,31 @@ const (
 	CALL
 )
 
+func parseAssignmentStatement(tokens *Stream[Token]) Statement {
+	stmt := AssignmentStatement{}
+	stmt.Name = parseIdentifier(tokens).(Identifier)
+
+	tokens.consume(1)
+
+	if !isToken(tokens, COLON, 0) {
+		log.Fatal("no colon in assignment statement")
+	}
+
+	tokens.consume(1)
+
+	stmt.Value = parseBlockExpression(tokens)
+
+	return stmt
+}
+
 func parsePubStatement(tokens *Stream[Token]) Statement {
 	stmt := &PubStatement{}
 	tokens.consume(1)
-	stmt.Public = parseExpression(tokens, LOWEST)
+	if isToken(tokens, IDENT, 0) && isToken(tokens, COLON, 1) {
+		stmt.Public = parseAssignmentStatement(tokens)
+	} else {
+		stmt.Public = parseExpression(tokens, LOWEST)
+	}
 	return stmt
 }
 
