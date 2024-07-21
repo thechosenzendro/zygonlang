@@ -518,7 +518,7 @@ func (FunctionDeclaration) Expr() {}
 type FunctionCall struct {
 	Fn        Expression
 	Arguments []struct {
-		Name  Identifier
+		Name  *Identifier
 		Value Expression
 	}
 }
@@ -587,10 +587,13 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		for !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
 			if isToken(tokens, IDENT, 0) {
 				argument := struct {
-					Name  Identifier
+					Name  *Identifier
 					Value Expression
 				}{}
-				argument.Name = parseIdentifier(tokens).(Identifier)
+				switch name := parseIdentifier(tokens).(type) {
+				case Identifier:
+					argument.Name = &name
+				}
 				tokens.consume(1)
 				if isToken(tokens, COLON, 0) {
 					tokens.consume(1)
@@ -600,6 +603,15 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 				expr.Arguments = append(expr.Arguments, argument)
 			} else if isToken(tokens, COMMA, 0) {
 				tokens.consume(1)
+			} else {
+				argument := struct {
+					Name  *Identifier
+					Value Expression
+				}{}
+				argument.Name = nil
+				argument.Value = parseExpression(tokens, LOWEST)
+				tokens.consume(1)
+				expr.Arguments = append(expr.Arguments, argument)
 			}
 		}
 		return expr
@@ -798,7 +810,6 @@ func parseStringLiteral(tokens *Stream[Token]) Expression {
 	expr := StringLiteral{}
 	for {
 		if isToken(tokens, STRING_END, 0) {
-			tokens.consume(1)
 			break
 		} else if isToken(tokens, STRING_PART, 0) {
 			expr.Parts = append(expr.Parts, StringPart{tokens.peek(0).Value})

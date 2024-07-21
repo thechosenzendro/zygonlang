@@ -2,21 +2,20 @@ variable: 1
 
 func(x, y): x + y
 
-table: {
-	x: 4,
-	y: 5
-}
-
 table.x
 
-case x:
-	1: io.log("Yippeee")
-	2: error("bruh")
+case:
+	1 is 1: io.log("Yippeee")
+	2 is not 3: error("bruh")
 
 1 + 1
 1 - 1
 1 * 1
 1 / 1
+
+false
+
+true
 
 case:
     x is y and y is g: a
