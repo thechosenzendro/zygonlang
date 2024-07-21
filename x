@@ -22,8 +22,8 @@ PrefixExpression [DONE]
 
 InfixExpression [DONE]
 
-FunctionDeclaration
+FunctionDeclaration [DONE]
 
-FunctionCall
+FunctionCall [DONE]
 
 TableLiteral

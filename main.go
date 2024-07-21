@@ -23,10 +23,12 @@ func main() {
 	ast := parse(&tokens)
 	spew.Dump(ast)
 
-	env := &Enviroment{make(map[string]Value)}
+	env := &Environment{Store: make(map[string]Value), Outer: nil}
 
 	res := eval(ast, env)
-	log.Println(res.Inspect())
+	if res != nil {
+		log.Println(res.Inspect())
+	}
 }
 
 type Stream[T comparable] struct {
@@ -892,9 +894,10 @@ type Value interface {
 }
 
 const (
-	NUMBER = "Number"
-	BOOL   = "Boolean"
-	TEXT   = "Text"
+	NUMBER   = "Number"
+	BOOL     = "Boolean"
+	TEXT     = "Text"
+	FUNCTION = "Function"
 )
 
 type Number struct {
@@ -918,21 +921,37 @@ type Text struct {
 func (s Text) Type() string    { return TEXT }
 func (s Text) Inspect() string { return s.Value }
 
-type Enviroment struct {
+type Function struct {
+	Parameters []struct {
+		Name    Identifier
+		Default Value
+	}
+	Body Block
+	env  *Environment
+}
+
+func (f Function) Type() string    { return FUNCTION }
+func (f Function) Inspect() string { return "Function Declaration" }
+
+type Environment struct {
 	Store map[string]Value
+	Outer *Environment
 }
 
-func (e *Enviroment) Get(name string) (Value, bool) {
-	val, ok := e.Store[name]
-	return val, ok
+func (e *Environment) Get(name string) (Value, bool) {
+	obj, ok := e.Store[name]
+	if !ok && e.Outer != nil {
+		obj, ok = e.Outer.Get(name)
+	}
+	return obj, ok
 }
 
-func (e *Enviroment) Set(name string, val Value) Value {
+func (e *Environment) Set(name string, val Value) Value {
 	e.Store[name] = val
 	return val
 }
 
-func eval(_node Node, env *Enviroment) Value {
+func eval(_node Node, env *Environment) Value {
 	switch node := _node.(type) {
 	case Program:
 		var res Value
@@ -1022,9 +1041,67 @@ func eval(_node Node, env *Enviroment) Value {
 	case Identifier:
 		val, ok := env.Get(node.Value[0])
 		if !ok {
-			log.Fatal("identifier ", node.Value[0])
+			log.Fatal("identifier ", node.Value[0], " not found")
 		}
 		return val
+	case FunctionDeclaration:
+		parameters := []struct {
+			Name    Identifier
+			Default Value
+		}{}
+		for _, param := range node.Parameters {
+			if param.Default == nil {
+				parameters = append(parameters, struct {
+					Name    Identifier
+					Default Value
+				}{
+					Name:    param.Name,
+					Default: nil,
+				})
+			} else {
+				parameters = append(parameters, struct {
+					Name    Identifier
+					Default Value
+				}{
+					Name:    param.Name,
+					Default: eval(param.Default, env),
+				})
+			}
+
+		}
+		if node.Name == nil {
+			return Function{parameters, node.Body, env}
+		} else {
+			env.Set(node.Name.Value[0], Function{parameters, node.Body, env})
+			return nil
+		}
+	case FunctionCall:
+		function := eval(node.Fn, env).(Function)
+		e := &Environment{make(map[string]Value), env}
+
+		for i, param := range function.Parameters {
+			if len(node.Arguments) > i {
+				arg := node.Arguments[i]
+				if arg.Name == nil {
+					arg.Name = &param.Name
+				}
+				var value Value = eval(arg.Value, e)
+				if arg.Value == nil {
+					value = function.Parameters[i].Default
+				}
+				e.Set(arg.Name.Value[0], value)
+			} else {
+
+				name := &param.Name
+				value := function.Parameters[i].Default
+				if value == nil {
+					log.Fatal("no default")
+				}
+				e.Set(name.Value[0], value)
+			}
+		}
+		return eval(function.Body, e)
+
 	default:
 		log.Fatalf("eval error %T", node)
 	}
