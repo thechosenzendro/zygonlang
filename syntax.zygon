@@ -2,6 +2,11 @@ variable: 1
 
 func(x, y): x + y
 
+table:
+    {
+        x: 1
+    }
+
 table.x
 
 case:

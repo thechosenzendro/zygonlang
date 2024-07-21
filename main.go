@@ -446,6 +446,7 @@ func parse(tokens *Stream[Token]) Program {
 	prefixParseFns[LPAREN] = resolveLParen
 	prefixParseFns[CASE] = parseCaseExpression
 	prefixParseFns[STRING_START] = parseStringLiteral
+	prefixParseFns[LBRACE] = parseTableLiteral
 
 	infixParseFns[PLUS] = parseInfixExpression
 	infixParseFns[MINUS] = parseInfixExpression
@@ -686,6 +687,58 @@ func parseUsingStatement(tokens *Stream[Token]) Statement {
 
 	}
 	return stmt
+}
+
+type TableLiteral struct {
+	Entries []struct {
+		Key   *Identifier
+		Value Expression
+	}
+}
+
+func (TableLiteral) Expr() {}
+
+func parseTableLiteral(tokens *Stream[Token]) Expression {
+	expr := TableLiteral{}
+	braceLevel := tokens.peek(0).Value
+	tokens.consume(1)
+	for !(isToken(tokens, RBRACE, 0) && tokens.peek(0).Value == braceLevel) {
+		entry := struct {
+			Key   *Identifier
+			Value Expression
+		}{}
+		if isToken(tokens, IDENT, 0) {
+			val := parseIdentifier(tokens)
+
+			tokens.consume(1)
+
+			if isToken(tokens, COLON, 0) {
+				switch key := val.(type) {
+				case Identifier:
+					entry.Key = &key
+				}
+				tokens.consume(1)
+				entry.Value = parseExpression(tokens, LOWEST)
+				tokens.consume(1)
+				expr.Entries = append(expr.Entries, entry)
+			} else {
+				entry.Key = nil
+				entry.Value = val
+				expr.Entries = append(expr.Entries, entry)
+			}
+		} else if isToken(tokens, COMMA, 0) {
+			tokens.consume(1)
+		} else if isToken(tokens, EOL, 0) || isToken(tokens, INDENT, 0) || isToken(tokens, DEDENT, 0) {
+			tokens.consume(1)
+		} else {
+			entry.Key = nil
+			entry.Value = parseExpression(tokens, LOWEST)
+			tokens.consume(1)
+
+			expr.Entries = append(expr.Entries, entry)
+		}
+	}
+	return expr
 }
 
 func parseCaseExpression(tokens *Stream[Token]) Expression {
