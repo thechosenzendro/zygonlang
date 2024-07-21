@@ -881,7 +881,6 @@ func parseExpression(tokens *Stream[Token], precedence int) Expression {
 		log.Fatalf("No prefix parser for %s", tokens.peek(0))
 	}
 	leftExpr := prefix(tokens)
-	log.Println(!(tokens.peek(1).Type == EOL), getPrecedence(*tokens.peek(1)))
 
 	for !(tokens.peek(1).Type == EOL) && precedence < getPrecedence(*tokens.peek(1)) {
 		infix := infixParseFns[tokens.peek(1).Type]
