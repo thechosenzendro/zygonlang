@@ -518,7 +518,7 @@ func resolveLParen(tokens *Stream[Token]) Expression {
 	i := 0
 	parenLevel := tokens.peek(0).Value
 
-	for !(isToken(tokens, RPAREN, i) && tokens.peek(0).Value == parenLevel) {
+	for !(isToken(tokens, RPAREN, i) && tokens.peek(i).Value == parenLevel) {
 		i += 1
 	}
 	i += 1
@@ -537,7 +537,7 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		i := 0
 		parenLevel := tokens.peek(0).Value
 
-		for !(isToken(tokens, RPAREN, i) && tokens.peek(0).Value == parenLevel) {
+		for !(isToken(tokens, RPAREN, i) && tokens.peek(i).Value == parenLevel) {
 			i += 1
 		}
 		i += 1

@@ -1,0 +1,4 @@
+apply(f):
+    f(4)
+
+apply((x): x * 2)
