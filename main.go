@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -15,12 +16,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// the parser needs to parse indents correctly
+	// the lexer needs to lex indents correctly
 	tokens := tokenize(string(sourceCode) + "\n")
 	log.Println(tokens)
 
 	ast := parse(&tokens)
 	spew.Dump(ast)
+
+	eval(ast)
 }
 
 type Stream[T comparable] struct {
@@ -67,9 +70,9 @@ const (
 	LBRACE       = "LBRACE"
 	RBRACE       = "RBRACE"
 	CASE         = "CASE"
-	STRING_START = "STRING_START"
-	STRING_PART  = "STRING_PART"
-	STRING_END   = "STRING_END"
+	TEXT_START   = "TEXT_START"
+	TEXT_PART    = "TEXT_PART"
+	TEXT_END     = "TEXT_END"
 	MINUS        = "MINUS"
 	STAR         = "STAR"
 	SLASH        = "SLASH"
@@ -92,213 +95,199 @@ type Token struct {
 	Value string
 }
 
+var parenLevel = 0
+var braceLevel = 0
+var indentLevel = []int{0}
+
 func tokenize(sourceCode string) Stream[Token] {
-	source := Stream[rune]{0, []rune(sourceCode)}
+	source := &Stream[rune]{0, []rune(sourceCode)}
 	tokens := Stream[Token]{0, []Token{}}
 
-	parenLevel := 0
-	braceLevel := 0
-	indentLevel := []int{0}
-	stringInterpolationOpened := false
 	for source.peek(0) != nil {
-		switch {
-
-		case *source.peek(0) == '#':
-			for *source.peek(0) != '\n' {
-				source.consume(1)
-			}
-		case unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_':
-			buf := []rune{}
-			for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_' || *source.peek(0) == '.') {
-				buf = append(buf, *source.peek(0))
-				source.consume(1)
-			}
-			if string(buf) == "case" {
-				tokens.Contents = append(tokens.Contents, Token{CASE, "case"})
-			} else if string(buf) == "is" {
-				tokens.Contents = append(tokens.Contents, Token{IS, "is"})
-			} else if string(buf) == "not" {
-				tokens.Contents = append(tokens.Contents, Token{NOT, "not"})
-			} else if string(buf) == "and" {
-				tokens.Contents = append(tokens.Contents, Token{AND, "and"})
-			} else if string(buf) == "or" {
-				tokens.Contents = append(tokens.Contents, Token{OR, "or"})
-			} else if string(buf) == "pub" {
-				tokens.Contents = append(tokens.Contents, Token{PUB, "pub"})
-			} else if string(buf) == "using" {
-				tokens.Contents = append(tokens.Contents, Token{USING, "using"})
-			} else if string(buf) == "true" {
-				tokens.Contents = append(tokens.Contents, Token{TRUE, "true"})
-			} else if string(buf) == "false" {
-				tokens.Contents = append(tokens.Contents, Token{FALSE, "false"})
-			} else {
-				tokens.Contents = append(tokens.Contents, Token{IDENT, string(buf)})
-
-			}
-
-		case unicode.IsDigit(*source.peek(0)):
-			buf := []rune{}
-			hasDecimal := false
-			for source.peek(0) != nil && (unicode.IsDigit(*source.peek(0)) || *source.peek(0) == '_' || *source.peek(0) == '.') {
-				if *source.peek(0) == '.' {
-					if hasDecimal {
-						log.Fatal("Number literal cannot have more decimal parts")
-					} else {
-						hasDecimal = true
-					}
-				}
-				buf = append(buf, *source.peek(0))
-				source.consume(1)
-			}
-			if buf[len(buf)-1] == '.' {
-				log.Fatal("No fractional part")
-			}
-			tokens.Contents = append(tokens.Contents, Token{NUM, string(buf)})
-
-		case *source.peek(0) == '}' && stringInterpolationOpened:
-			source.consume(1)
-			stringInterpolationOpened = false
-			buf := []rune{}
-			for {
-				if *source.peek(0) == '"' {
-					break
-				} else if *source.peek(0) == '{' {
-					tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
-					stringInterpolationOpened = true
-					source.consume(1)
-					break
-				} else if *source.peek(0) == '\\' {
-					source.consume(1)
-					buf = append(buf, *source.peek(0))
-					source.consume(1)
-				} else {
-					buf = append(buf, *source.peek(0))
-					source.consume(1)
-				}
-			}
-			if !stringInterpolationOpened {
-				source.consume(1)
-				tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
-				tokens.Contents = append(tokens.Contents, Token{STRING_END, ""})
-			}
-		case *source.peek(0) == '"':
-			source.consume(1)
-			tokens.Contents = append(tokens.Contents, Token{STRING_START, ""})
-			buf := []rune{}
-			for {
-				if *source.peek(0) == '"' {
-					break
-				} else if *source.peek(0) == '{' {
-					tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
-					stringInterpolationOpened = true
-					source.consume(1)
-					break
-				} else if *source.peek(0) == '\\' {
-					source.consume(1)
-					buf = append(buf, *source.peek(0))
-					source.consume(1)
-				} else {
-					buf = append(buf, *source.peek(0))
-					source.consume(1)
-				}
-			}
-			if !stringInterpolationOpened {
-				source.consume(1)
-				tokens.Contents = append(tokens.Contents, Token{STRING_PART, string(buf)})
-				tokens.Contents = append(tokens.Contents, Token{STRING_END, ""})
-			}
-
-		case *source.peek(0) != '\n' && unicode.IsSpace(*source.peek(0)):
-			source.consume(1)
-
-		case *source.peek(0) == '\n':
-			source.consume(1)
-			tokens.Contents = append(tokens.Contents, Token{EOL, "\\n"})
-			currentIndentLevel := 0
-
-			if source.peek(0) != nil {
-				for {
-					if *source.peek(0) == ' ' {
-						currentIndentLevel += 1
-						source.consume(1)
-
-					} else if *source.peek(0) == '\t' {
-						currentIndentLevel += 4
-						source.consume(1)
-
-					} else {
-						break
-					}
-				}
-			}
-			for {
-				if currentIndentLevel == indentLevel[len(indentLevel)-1] {
-					break
-				}
-				if currentIndentLevel > indentLevel[len(indentLevel)-1] {
-					indentLevel = append(indentLevel, currentIndentLevel)
-					tokens.Contents = append(tokens.Contents, Token{INDENT, strconv.Itoa(currentIndentLevel)})
-				} else if currentIndentLevel < indentLevel[len(indentLevel)-1] {
-					tokens.Contents = append(tokens.Contents, Token{DEDENT, strconv.Itoa(indentLevel[len(indentLevel)-1])})
-					indentLevel = indentLevel[:len(indentLevel)-1]
-				}
-			}
-
-		case *source.peek(0) == '(':
-			parenLevel += 1
-			tokens.Contents = append(tokens.Contents, Token{LPAREN, strconv.Itoa(parenLevel)})
-			source.consume(1)
-
-		case *source.peek(0) == ')':
-			parenLevel -= 1
-			tokens.Contents = append(tokens.Contents, Token{RPAREN, strconv.Itoa(parenLevel + 1)})
-			source.consume(1)
-
-		case *source.peek(0) == '{':
-			braceLevel += 1
-			tokens.Contents = append(tokens.Contents, Token{LBRACE, strconv.Itoa(braceLevel)})
-			source.consume(1)
-
-		case *source.peek(0) == '}':
-			braceLevel -= 1
-			tokens.Contents = append(tokens.Contents, Token{RBRACE, strconv.Itoa(braceLevel + 1)})
-			source.consume(1)
-
-		case *source.peek(0) == ',':
-			tokens.Contents = append(tokens.Contents, Token{COMMA, ","})
-			source.consume(1)
-
-		case *source.peek(0) == '+':
-			tokens.Contents = append(tokens.Contents, Token{PLUS, "+"})
-			source.consume(1)
-
-		case *source.peek(0) == '-':
-			tokens.Contents = append(tokens.Contents, Token{MINUS, "-"})
-			source.consume(1)
-
-		case *source.peek(0) == '*':
-			tokens.Contents = append(tokens.Contents, Token{STAR, "*"})
-			source.consume(1)
-
-		case *source.peek(0) == '/':
-			tokens.Contents = append(tokens.Contents, Token{SLASH, "/"})
-			source.consume(1)
-
-		case *source.peek(0) == ':':
-			tokens.Contents = append(tokens.Contents, Token{COLON, ":"})
-			source.consume(1)
-		case *source.peek(0) == '<':
-			tokens.Contents = append(tokens.Contents, Token{LESSER_THAN, "<"})
-			source.consume(1)
-		case *source.peek(0) == '>':
-			tokens.Contents = append(tokens.Contents, Token{GREATER_THAN, ">"})
-			source.consume(1)
-		default:
-			tokens.Contents = append(tokens.Contents, Token{UNKNOWN, string(*source.peek(0))})
-			source.consume(1)
-		}
+		tokens.Contents = append(tokens.Contents, lexToken(source)...)
 	}
 	tokens.Contents = append(tokens.Contents, Token{EOF, ""})
+	return tokens
+}
+
+func lexToken(source *Stream[rune]) []Token {
+	tokens := []Token{}
+
+	switch {
+
+	case *source.peek(0) == '#':
+		for *source.peek(0) != '\n' {
+			source.consume(1)
+		}
+	case unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_':
+		buf := []rune{}
+		for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_' || *source.peek(0) == '.') {
+			buf = append(buf, *source.peek(0))
+			source.consume(1)
+		}
+		if string(buf) == "case" {
+			tokens = append(tokens, Token{CASE, "case"})
+		} else if string(buf) == "is" {
+			tokens = append(tokens, Token{IS, "is"})
+		} else if string(buf) == "not" {
+			tokens = append(tokens, Token{NOT, "not"})
+		} else if string(buf) == "and" {
+			tokens = append(tokens, Token{AND, "and"})
+		} else if string(buf) == "or" {
+			tokens = append(tokens, Token{OR, "or"})
+		} else if string(buf) == "pub" {
+			tokens = append(tokens, Token{PUB, "pub"})
+		} else if string(buf) == "using" {
+			tokens = append(tokens, Token{USING, "using"})
+		} else if string(buf) == "true" {
+			tokens = append(tokens, Token{TRUE, "true"})
+		} else if string(buf) == "false" {
+			tokens = append(tokens, Token{FALSE, "false"})
+		} else {
+			tokens = append(tokens, Token{IDENT, string(buf)})
+
+		}
+
+	case unicode.IsDigit(*source.peek(0)):
+		buf := []rune{}
+		hasDecimal := false
+		for source.peek(0) != nil && (unicode.IsDigit(*source.peek(0)) || *source.peek(0) == '_' || *source.peek(0) == '.') {
+			if *source.peek(0) == '.' {
+				if hasDecimal {
+					log.Fatal("Number literal cannot have more decimal parts")
+				} else {
+					hasDecimal = true
+				}
+			}
+			buf = append(buf, *source.peek(0))
+			source.consume(1)
+		}
+		if buf[len(buf)-1] == '.' {
+			log.Fatal("No fractional part")
+		}
+		tokens = append(tokens, Token{NUM, string(buf)})
+
+	case *source.peek(0) == '"':
+		source.consume(1)
+		tokens = append(tokens, Token{TEXT_START, ""})
+		buf := []rune{}
+		for {
+			if *source.peek(0) == '"' {
+				break
+			} else if *source.peek(0) == '{' {
+				braceLevel += 1
+				bl := braceLevel
+				tokens = append(tokens, Token{TEXT_PART, string(buf)})
+				buf = []rune{}
+				source.consume(1)
+				for *source.peek(0) != '}' && braceLevel == bl {
+					tokens = append(tokens, lexToken(source)...)
+				}
+				source.consume(1)
+				braceLevel -= 1
+
+			} else if *source.peek(0) == '\\' {
+				source.consume(1)
+				buf = append(buf, *source.peek(0))
+				source.consume(1)
+			} else {
+				buf = append(buf, *source.peek(0))
+				source.consume(1)
+			}
+		}
+		source.consume(1)
+		tokens = append(tokens, Token{TEXT_PART, string(buf)})
+		tokens = append(tokens, Token{TEXT_END, ""})
+
+	case *source.peek(0) != '\n' && unicode.IsSpace(*source.peek(0)):
+		source.consume(1)
+
+	case *source.peek(0) == '\n':
+		source.consume(1)
+		tokens = append(tokens, Token{EOL, "\\n"})
+		currentIndentLevel := 0
+
+		if source.peek(0) != nil {
+			for {
+				if *source.peek(0) == ' ' {
+					currentIndentLevel += 1
+					source.consume(1)
+
+				} else if *source.peek(0) == '\t' {
+					currentIndentLevel += 4
+					source.consume(1)
+
+				} else {
+					break
+				}
+			}
+		}
+		for {
+			if currentIndentLevel == indentLevel[len(indentLevel)-1] {
+				break
+			}
+			if currentIndentLevel > indentLevel[len(indentLevel)-1] {
+				indentLevel = append(indentLevel, currentIndentLevel)
+				tokens = append(tokens, Token{INDENT, strconv.Itoa(currentIndentLevel)})
+			} else if currentIndentLevel < indentLevel[len(indentLevel)-1] {
+				tokens = append(tokens, Token{DEDENT, strconv.Itoa(indentLevel[len(indentLevel)-1])})
+				indentLevel = indentLevel[:len(indentLevel)-1]
+			}
+		}
+
+	case *source.peek(0) == '(':
+		parenLevel += 1
+		tokens = append(tokens, Token{LPAREN, strconv.Itoa(parenLevel)})
+		source.consume(1)
+
+	case *source.peek(0) == ')':
+		parenLevel -= 1
+		tokens = append(tokens, Token{RPAREN, strconv.Itoa(parenLevel + 1)})
+		source.consume(1)
+
+	case *source.peek(0) == '{':
+		braceLevel += 1
+		tokens = append(tokens, Token{LBRACE, strconv.Itoa(braceLevel)})
+		source.consume(1)
+
+	case *source.peek(0) == '}':
+		braceLevel -= 1
+		tokens = append(tokens, Token{RBRACE, strconv.Itoa(braceLevel + 1)})
+		source.consume(1)
+
+	case *source.peek(0) == ',':
+		tokens = append(tokens, Token{COMMA, ","})
+		source.consume(1)
+
+	case *source.peek(0) == '+':
+		tokens = append(tokens, Token{PLUS, "+"})
+		source.consume(1)
+
+	case *source.peek(0) == '-':
+		tokens = append(tokens, Token{MINUS, "-"})
+		source.consume(1)
+
+	case *source.peek(0) == '*':
+		tokens = append(tokens, Token{STAR, "*"})
+		source.consume(1)
+
+	case *source.peek(0) == '/':
+		tokens = append(tokens, Token{SLASH, "/"})
+		source.consume(1)
+
+	case *source.peek(0) == ':':
+		tokens = append(tokens, Token{COLON, ":"})
+		source.consume(1)
+	case *source.peek(0) == '<':
+		tokens = append(tokens, Token{LESSER_THAN, "<"})
+		source.consume(1)
+	case *source.peek(0) == '>':
+		tokens = append(tokens, Token{GREATER_THAN, ">"})
+		source.consume(1)
+	default:
+		tokens = append(tokens, Token{UNKNOWN, string(*source.peek(0))})
+		source.consume(1)
+	}
 	return tokens
 }
 
@@ -336,17 +325,17 @@ type BooleanLiteral struct {
 
 func (BooleanLiteral) Expr() {}
 
-type StringLiteral struct {
+type TextLiteral struct {
 	Parts []Expression
 }
 
-func (StringLiteral) Expr() {}
+func (TextLiteral) Expr() {}
 
-type StringPart struct {
+type TextPart struct {
 	Value string
 }
 
-func (s StringPart) Expr() {}
+func (s TextPart) Expr() {}
 
 type PubStatement struct {
 	Public Node
@@ -445,7 +434,7 @@ func parse(tokens *Stream[Token]) Program {
 	prefixParseFns[FALSE] = parseBooleanLiteral
 	prefixParseFns[LPAREN] = resolveLParen
 	prefixParseFns[CASE] = parseCaseExpression
-	prefixParseFns[STRING_START] = parseStringLiteral
+	prefixParseFns[TEXT_START] = parseTextLiteral
 	prefixParseFns[LBRACE] = parseTableLiteral
 
 	infixParseFns[PLUS] = parseInfixExpression
@@ -742,7 +731,7 @@ func parseTableLiteral(tokens *Stream[Token]) Expression {
 }
 
 func parseCaseExpression(tokens *Stream[Token]) Expression {
-	expr := &CaseExpression{}
+	expr := CaseExpression{}
 	tokens.consume(1)
 	if !isToken(tokens, COLON, 0) {
 		log.Fatal("no colon in case expression")
@@ -813,14 +802,14 @@ func parseBlock(tokens *Stream[Token]) Block {
 
 func parseBooleanLiteral(tokens *Stream[Token]) Expression {
 	if isToken(tokens, TRUE, 0) {
-		return &BooleanLiteral{true}
+		return BooleanLiteral{true}
 	} else {
-		return &BooleanLiteral{false}
+		return BooleanLiteral{false}
 	}
 }
 
 func parseInfixExpression(tokens *Stream[Token], left Expression) Expression {
-	expr := &InfixExpression{Left: left, Operator: string(tokens.peek(0).Type)}
+	expr := InfixExpression{Left: left, Operator: string(tokens.peek(0).Type)}
 	precedence := getPrecedence(*tokens.peek(0))
 	tokens.consume(1)
 	expr.Right = parseExpression(tokens, precedence)
@@ -828,7 +817,7 @@ func parseInfixExpression(tokens *Stream[Token], left Expression) Expression {
 }
 
 func parseIsExpression(tokens *Stream[Token], left Expression) Expression {
-	expr := &InfixExpression{Left: left, Operator: IS}
+	expr := InfixExpression{Left: left, Operator: IS}
 	precedence := getPrecedence(*tokens.peek(0))
 	tokens.consume(1)
 	if isToken(tokens, NOT, 0) {
@@ -840,7 +829,7 @@ func parseIsExpression(tokens *Stream[Token], left Expression) Expression {
 }
 
 func parsePrefixExpression(tokens *Stream[Token]) Expression {
-	expr := &PrefixExpression{Operator: string(tokens.peek(0).Type)}
+	expr := PrefixExpression{Operator: string(tokens.peek(0).Type)}
 	tokens.consume(1)
 	expr.Right = parseExpression(tokens, PREFIX)
 	return expr
@@ -858,14 +847,14 @@ func parseIdentifier(tokens *Stream[Token]) Expression {
 	return Identifier{strings.Split(tokens.peek(0).Value, ".")}
 }
 
-func parseStringLiteral(tokens *Stream[Token]) Expression {
+func parseTextLiteral(tokens *Stream[Token]) Expression {
 	tokens.consume(1)
-	expr := StringLiteral{}
+	expr := TextLiteral{}
 	for {
-		if isToken(tokens, STRING_END, 0) {
+		if isToken(tokens, TEXT_END, 0) {
 			break
-		} else if isToken(tokens, STRING_PART, 0) {
-			expr.Parts = append(expr.Parts, StringPart{tokens.peek(0).Value})
+		} else if isToken(tokens, TEXT_PART, 0) {
+			expr.Parts = append(expr.Parts, TextPart{tokens.peek(0).Value})
 			tokens.consume(1)
 		} else {
 			expr.Parts = append(expr.Parts, parseExpression(tokens, LOWEST))
@@ -892,4 +881,106 @@ func parseExpression(tokens *Stream[Token], precedence int) Expression {
 	}
 
 	return leftExpr
+}
+
+type Value interface {
+	Type() string
+	Inspect() string
+}
+
+const (
+	NUMBER = "Number"
+	BOOL   = "Boolean"
+	TEXT   = "Text"
+)
+
+type Number struct {
+	Value float64
+}
+
+func (n Number) Type() string    { return NUMBER }
+func (n Number) Inspect() string { return fmt.Sprintf("%f", n.Value) }
+
+type Boolean struct {
+	Value bool
+}
+
+func (b Boolean) Type() string    { return BOOL }
+func (b Boolean) Inspect() string { return fmt.Sprintf("%t", b.Value) }
+
+type Text struct {
+	Value string
+}
+
+func (s Text) Type() string    { return TEXT }
+func (s Text) Inspect() string { return s.Value }
+
+func eval(node Node) Value {
+	switch node := node.(type) {
+	case Program:
+		var res Value
+		for _, nd := range node.Body {
+			res = eval(nd)
+			log.Println(res)
+		}
+		return res
+	case NumberLiteral:
+		return Number(node)
+	case BooleanLiteral:
+		return Boolean(node)
+	case TextLiteral:
+		str := ""
+		for _, part := range node.Parts {
+			switch part := part.(type) {
+			case TextPart:
+				str = str + part.Value
+			default:
+				str = str + eval(part).Inspect()
+			}
+		}
+		return Text{str}
+	case PrefixExpression:
+		right := eval(node.Right)
+		switch node.Operator {
+		case NOT:
+			switch right := right.(type) {
+			case Boolean:
+				return Boolean{!right.Value}
+			default:
+				log.Fatal("non boolean passed to not")
+			}
+		case MINUS:
+			switch right := right.(type) {
+			case Number:
+				return Number{-right.Value}
+			}
+		}
+	case InfixExpression:
+		left := eval(node.Left)
+		right := eval(node.Right)
+		if left.Type() == NUMBER && right.Type() == NUMBER {
+			switch node.Operator {
+			case PLUS:
+				return Number{left.(Number).Value + right.(Number).Value}
+			case MINUS:
+				return Number{left.(Number).Value - right.(Number).Value}
+			case STAR:
+				return Number{left.(Number).Value * right.(Number).Value}
+			case SLASH:
+				return Number{left.(Number).Value / right.(Number).Value}
+			case GREATER_THAN:
+				return Boolean{left.(Number).Value > right.(Number).Value}
+			case LESSER_THAN:
+				return Boolean{left.(Number).Value < right.(Number).Value}
+
+			}
+		}
+		switch node.Operator {
+		case IS:
+			return Boolean{left == right}
+		case IS_NOT:
+			return Boolean{left != right}
+		}
+	}
+	panic("eval error")
 }
