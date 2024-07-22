@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -894,10 +895,12 @@ type Value interface {
 }
 
 const (
-	NUMBER   = "Number"
-	BOOL     = "Boolean"
-	TEXT     = "Text"
-	FUNCTION = "Function"
+	NUMBER    = "Number"
+	BOOL      = "Boolean"
+	TEXT      = "Text"
+	FUNCTION  = "Function"
+	TABLE     = "Table"
+	TABLE_KEY = "TableKey"
 )
 
 type Number struct {
@@ -905,7 +908,7 @@ type Number struct {
 }
 
 func (n Number) Type() string    { return NUMBER }
-func (n Number) Inspect() string { return fmt.Sprintf("%f", n.Value) }
+func (n Number) Inspect() string { return strconv.FormatFloat(n.Value, 'f', -1, 64) }
 
 type Boolean struct {
 	Value bool
@@ -919,7 +922,7 @@ type Text struct {
 }
 
 func (s Text) Type() string    { return TEXT }
-func (s Text) Inspect() string { return s.Value }
+func (s Text) Inspect() string { return "\"" + s.Value + "\"" }
 
 type Function struct {
 	Parameters []struct {
@@ -933,22 +936,67 @@ type Function struct {
 func (f Function) Type() string    { return FUNCTION }
 func (f Function) Inspect() string { return "Function Declaration" }
 
+type Table struct {
+	Entries map[Value]Value
+}
+
+var tableIndentLevel int
+
+func indent() string {
+	str := ""
+	for range tableIndentLevel {
+		str = str + " "
+	}
+	return str
+}
+
+func (t Table) Type() string { return TABLE }
+func (t Table) Inspect() string {
+	var out bytes.Buffer
+	out.WriteString("{\n")
+	tableIndentLevel += 4
+	for key, value := range t.Entries {
+		out.WriteString(fmt.Sprintf("%s%s: %s\n", indent(), key.Inspect(), value.Inspect()))
+	}
+	tableIndentLevel -= 4
+	out.WriteString(fmt.Sprintf("%s}\n", indent()))
+	return out.String()
+}
+func (t Table) Get(name string) (Value, bool) {
+	val, ok := t.Entries[TableKey{name}]
+	if !ok {
+		log.Fatal("no ident")
+	}
+	return val, ok
+}
+
+type TableKey struct {
+	Value string
+}
+
+func (tk TableKey) Type() string    { return TABLE_KEY }
+func (tk TableKey) Inspect() string { return tk.Value }
+
 type Environment struct {
 	Store map[string]Value
 	Outer *Environment
 }
 
 func (e *Environment) Get(name string) (Value, bool) {
-	obj, ok := e.Store[name]
+	val, ok := e.Store[name]
 	if !ok && e.Outer != nil {
-		obj, ok = e.Outer.Get(name)
+		val, ok = e.Outer.Get(name)
 	}
-	return obj, ok
+	return val, ok
 }
 
 func (e *Environment) Set(name string, val Value) Value {
 	e.Store[name] = val
 	return val
+}
+
+type Gettable interface {
+	Get(name string) (Value, bool)
 }
 
 func eval(_node Node, env *Environment) Value {
@@ -1039,11 +1087,26 @@ func eval(_node Node, env *Environment) Value {
 		env.Set(node.Name.Value[0], val)
 		return nil
 	case Identifier:
-		val, ok := env.Get(node.Value[0])
-		if !ok {
-			log.Fatal("identifier ", node.Value[0], " not found")
+		var e Gettable
+		e = env
+		for i, part := range node.Value {
+			val, ok := e.Get(part)
+
+			if !ok {
+				log.Fatal("identifier ", part, " not found")
+			}
+			switch v := val.(type) {
+			case Table:
+				if i == len(node.Value)-1 {
+					return v
+				} else {
+					e = v
+				}
+			default:
+				return v
+			}
 		}
-		return val
+
 	case FunctionDeclaration:
 		parameters := []struct {
 			Name    Identifier
@@ -1101,9 +1164,21 @@ func eval(_node Node, env *Environment) Value {
 			}
 		}
 		return eval(function.Body, e)
+	case TableLiteral:
+		entries := map[Value]Value{}
+		index := -1
+		for _, entry := range node.Entries {
+			if entry.Key == nil {
+				index += 1
+				entries[Number{float64(index)}] = eval(entry.Value, env)
+			} else {
+				entries[TableKey{entry.Key.Value[0]}] = eval(entry.Value, env)
+			}
+		}
+		return Table{entries}
 
 	default:
 		log.Fatalf("eval error %T", node)
 	}
-	panic("uhoh")
+	return nil
 }
