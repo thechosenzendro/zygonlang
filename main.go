@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"unicode"
@@ -17,19 +18,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// the lexer needs to lex indents correctly
-	tokens := tokenize(string(sourceCode) + "\n")
-	log.Println(tokens)
 
-	ast := parse(&tokens)
-	spew.Dump(ast)
+	mod := Exec(string(sourceCode))
 
-	env := &Environment{Store: make(map[string]Value), Outer: nil}
-
-	res := eval(ast, env)
-	if res != nil {
-		log.Println(res.Inspect())
-	}
+	log.Println(mod.Value)
 }
 
 type Stream[T comparable] struct {
@@ -105,7 +97,7 @@ var parenLevel = 0
 var braceLevel = 0
 var indentLevel = []int{0}
 
-func tokenize(sourceCode string) Stream[Token] {
+func Tokenize(sourceCode string) Stream[Token] {
 	source := &Stream[rune]{0, []rune(sourceCode)}
 	tokens := Stream[Token]{0, []Token{}}
 
@@ -357,7 +349,8 @@ type AssignmentStatement struct {
 func (AssignmentStatement) Stmt() {}
 
 type CaseExpression struct {
-	Cases []struct {
+	Subject Expression
+	Cases   []struct {
 		Pattern Expression
 		Block   Block
 	}
@@ -366,7 +359,7 @@ type CaseExpression struct {
 func (CaseExpression) Expr() {}
 
 type Block struct {
-	Body []Expression
+	Body []Node
 }
 
 type UsingStatement struct {
@@ -460,7 +453,7 @@ func parseGroupedExpression(tokens *Stream[Token]) Expression {
 	return expr
 }
 
-func parse(tokens *Stream[Token]) Program {
+func Parse(tokens *Stream[Token]) Program {
 	program := Program{Body: []Node{}}
 	prefixParseFns[IDENT] = parseIdentifier
 	prefixParseFns[NUM] = parseNumberLiteral
@@ -595,16 +588,15 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 					Name  *Identifier
 					Value Expression
 				}{}
-				switch name := parseIdentifier(tokens).(type) {
-				case Identifier:
-					argument.Name = &name
+				if isToken(tokens, COLON, 1) {
+					switch name := parseIdentifier(tokens).(type) {
+					case Identifier:
+						argument.Name = &name
+					}
+					tokens.consume(2)
 				}
+				argument.Value = parseExpression(tokens, LOWEST)
 				tokens.consume(1)
-				if isToken(tokens, COLON, 0) {
-					tokens.consume(1)
-					argument.Value = parseExpression(tokens, LOWEST)
-					tokens.consume(1)
-				}
 				expr.Arguments = append(expr.Arguments, argument)
 			} else if isToken(tokens, COMMA, 0) {
 				tokens.consume(1)
@@ -641,7 +633,7 @@ func parseAssignmentStatement(tokens *Stream[Token]) Statement {
 }
 
 func parsePubStatement(tokens *Stream[Token]) Statement {
-	stmt := &PubStatement{}
+	stmt := PubStatement{}
 	tokens.consume(1)
 	if isToken(tokens, IDENT, 0) && isToken(tokens, COLON, 1) {
 		stmt.Public = parseAssignmentStatement(tokens)
@@ -653,7 +645,7 @@ func parsePubStatement(tokens *Stream[Token]) Statement {
 
 func parseUsingStatement(tokens *Stream[Token]) Statement {
 	tokens.consume(1)
-	stmt := &UsingStatement{}
+	stmt := UsingStatement{}
 	for {
 		if isToken(tokens, EOL, 0) {
 			break
@@ -740,6 +732,10 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 	expr := CaseExpression{}
 	tokens.consume(1)
 	if !isToken(tokens, COLON, 0) {
+		expr.Subject = parseExpression(tokens, LOWEST)
+		tokens.consume(1)
+	}
+	if !isToken(tokens, COLON, 0) {
 		log.Fatal("no colon in case expression")
 	}
 	tokens.consume(1)
@@ -781,7 +777,7 @@ func parseBlock(tokens *Stream[Token]) Block {
 	block := Block{}
 	if !isToken(tokens, EOL, 0) {
 		expr := parseExpression(tokens, LOWEST)
-		block.Body = []Expression{expr}
+		block.Body = []Node{expr}
 		return block
 	}
 	tokens.consume(1)
@@ -901,7 +897,29 @@ const (
 	FUNCTION  = "Function"
 	TABLE     = "Table"
 	TABLE_KEY = "TableKey"
+	MODULE    = "Module"
+	BUILTIN   = "BuiltinFunction"
 )
+
+var stdlib = map[string]Module{
+	"io": {
+		Env: &Environment{
+			Pubs: map[string]Value{
+				"log": Builtin{
+					Fn: func(args ...Value) Value {
+						var out bytes.Buffer
+						for _, arg := range args {
+							out.WriteString(arg.Inspect())
+						}
+						out.WriteString("\n")
+						fmt.Println(out.String())
+						return nil
+					},
+				},
+			},
+		},
+	},
+}
 
 type Number struct {
 	Value float64
@@ -977,9 +995,35 @@ type TableKey struct {
 func (tk TableKey) Type() string    { return TABLE_KEY }
 func (tk TableKey) Inspect() string { return tk.Value }
 
+type Module struct {
+	Env   *Environment
+	Value Value
+}
+
+func (m Module) Get(name string) (Value, bool) {
+	val, ok := m.Env.Pubs[name]
+	if !ok {
+		log.Fatal("no pub")
+	}
+	return val, ok
+}
+
+func (m Module) Type() string    { return MODULE }
+func (m Module) Inspect() string { return "Module" }
+
+type BuiltinFunction func(args ...Value) Value
+
+type Builtin struct {
+	Fn BuiltinFunction
+}
+
+func (b Builtin) Type() string    { return BUILTIN }
+func (b Builtin) Inspect() string { return "Builtin Function" }
+
 type Environment struct {
 	Store map[string]Value
 	Outer *Environment
+	Pubs  map[string]Value
 }
 
 func (e *Environment) Get(name string) (Value, bool) {
@@ -999,12 +1043,26 @@ type Gettable interface {
 	Get(name string) (Value, bool)
 }
 
-func eval(_node Node, env *Environment) Value {
+func Eval(_node Node, env *Environment) Value {
 	switch node := _node.(type) {
 	case Program:
 		var res Value
 		for _, nd := range node.Body {
-			res = eval(nd, env)
+			run := true
+			switch nd := nd.(type) {
+			case AssignmentStatement:
+			case FunctionDeclaration:
+			case UsingStatement:
+			case PubStatement:
+			default:
+				run = false
+				res = Eval(nd, env)
+				env.Set("_", res)
+			}
+			if run {
+				res = Eval(nd, env)
+			}
+
 		}
 		return res
 	case NumberLiteral:
@@ -1018,12 +1076,12 @@ func eval(_node Node, env *Environment) Value {
 			case TextPart:
 				str = str + part.Value
 			default:
-				str = str + eval(part, env).Inspect()
+				str = str + Eval(part, env).Inspect()
 			}
 		}
 		return Text{str}
 	case PrefixExpression:
-		right := eval(node.Right, env)
+		right := Eval(node.Right, env)
 		switch node.Operator {
 		case NOT:
 			switch right := right.(type) {
@@ -1039,8 +1097,8 @@ func eval(_node Node, env *Environment) Value {
 			}
 		}
 	case InfixExpression:
-		left := eval(node.Left, env)
-		right := eval(node.Right, env)
+		left := Eval(node.Left, env)
+		right := Eval(node.Right, env)
 		if left.Type() == NUMBER && right.Type() == NUMBER {
 			switch node.Operator {
 			case PLUS:
@@ -1067,23 +1125,40 @@ func eval(_node Node, env *Environment) Value {
 	case Block:
 		var res Value
 		for _, nd := range node.Body {
-			res = eval(nd, env)
+			run := true
+			switch nd := nd.(type) {
+			case AssignmentStatement:
+			case FunctionDeclaration:
+			default:
+				run = false
+				res = Eval(nd, env)
+				env.Set("_", res)
+			}
+			if run {
+				res = Eval(nd, env)
+			}
 		}
 		return res
 
 	case CaseExpression:
 		for _, _case := range node.Cases {
-			pattern := eval(_case.Pattern, env)
-			if pattern.Type() != BOOL {
+			var patternResult Value
+			if node.Subject == nil {
+				patternResult = Eval(_case.Pattern, env)
+
+			} else {
+				patternResult = Boolean{reflect.DeepEqual(Eval(node.Subject, env), Eval(_case.Pattern, env))}
+			}
+			if patternResult.Type() != BOOL {
 				log.Fatal("pattern result is not a boolean")
 			}
-			if pattern.Inspect() == "true" {
-				return eval(_case.Block, env)
+			if patternResult.Inspect() == "true" {
+				return Eval(_case.Block, env)
 			}
 		}
 		panic("No truthy case in case expr")
 	case AssignmentStatement:
-		val := eval(node.Value, env)
+		val := Eval(node.Value, env)
 		env.Set(node.Name.Value[0], val)
 		return nil
 	case Identifier:
@@ -1102,6 +1177,8 @@ func eval(_node Node, env *Environment) Value {
 				} else {
 					e = v
 				}
+			case Module:
+				e = v
 			default:
 				return v
 			}
@@ -1127,58 +1204,127 @@ func eval(_node Node, env *Environment) Value {
 					Default Value
 				}{
 					Name:    param.Name,
-					Default: eval(param.Default, env),
+					Default: Eval(param.Default, env),
 				})
 			}
 
 		}
-		if node.Name == nil {
-			return Function{parameters, node.Body, env}
-		} else {
+		fn := Function{parameters, node.Body, env}
+		if node.Name != nil {
 			env.Set(node.Name.Value[0], Function{parameters, node.Body, env})
-			return nil
 		}
+		return fn
 	case FunctionCall:
-		function := eval(node.Fn, env).(Function)
-		e := &Environment{make(map[string]Value), env}
+		fn := Eval(node.Fn, env)
+		switch function := fn.(type) {
+		case Function:
+			funcEnviron := &Environment{Store: make(map[string]Value), Outer: function.env, Pubs: make(map[string]Value)}
 
-		for i, param := range function.Parameters {
-			if len(node.Arguments) > i {
-				arg := node.Arguments[i]
-				if arg.Name == nil {
-					arg.Name = &param.Name
+			for i, param := range function.Parameters {
+				if len(node.Arguments) > i {
+					arg := node.Arguments[i]
+					if arg.Name == nil {
+						arg.Name = &param.Name
+					}
+					var value Value = Eval(arg.Value, env)
+					if arg.Value == nil {
+						value = function.Parameters[i].Default
+					}
+					funcEnviron.Set(arg.Name.Value[0], value)
+				} else {
+					name := &param.Name
+					value := function.Parameters[i].Default
+					if value == nil {
+						log.Fatal("no default for ", function.Parameters[i].Name)
+					}
+					funcEnviron.Set(name.Value[0], value)
 				}
-				var value Value = eval(arg.Value, e)
-				if arg.Value == nil {
-					value = function.Parameters[i].Default
-				}
-				e.Set(arg.Name.Value[0], value)
-			} else {
-
-				name := &param.Name
-				value := function.Parameters[i].Default
-				if value == nil {
-					log.Fatal("no default")
-				}
-				e.Set(name.Value[0], value)
 			}
+			return Eval(function.Body, funcEnviron)
+
+		case Builtin:
+			arguments := []Value{}
+			for _, argument := range node.Arguments {
+				arguments = append(arguments, Eval(argument.Value, env))
+			}
+			return function.Fn(arguments...)
 		}
-		return eval(function.Body, e)
 	case TableLiteral:
 		entries := map[Value]Value{}
 		index := -1
 		for _, entry := range node.Entries {
 			if entry.Key == nil {
 				index += 1
-				entries[Number{float64(index)}] = eval(entry.Value, env)
+				entries[Number{float64(index)}] = Eval(entry.Value, env)
 			} else {
-				entries[TableKey{entry.Key.Value[0]}] = eval(entry.Value, env)
+				entries[TableKey{entry.Key.Value[0]}] = Eval(entry.Value, env)
 			}
 		}
 		return Table{entries}
+	case PubStatement:
+		switch pub := node.Public.(type) {
+		case AssignmentStatement:
+			env.Pubs[pub.Name.Value[0]] = Eval(pub.Value, env)
+		case FunctionDeclaration:
+			if pub.Name != nil {
+				env.Pubs[pub.Name.Value[0]] = Eval(pub, env)
+			} else {
+				log.Fatal("anonymous function could not be made public")
+			}
+		default:
+			log.Fatal("error in pub statement")
+		}
+	case UsingStatement:
+		rootModulePath := "./lib/"
 
+		for _, module := range node.Modules {
+			var mod Module
+			var ok bool
+			if mod, ok = stdlib[node.Modules[0].Module.Value[0]]; ok {
+
+			} else {
+				modulePath := rootModulePath
+				if module.Module.Value[len(module.Module.Value)-1] == "" {
+					module.Module.Value = module.Module.Value[:len(module.Module.Value)-1]
+				}
+				for i, pathPart := range module.Module.Value {
+					if i != len(module.Module.Value)-1 {
+						modulePath = modulePath + pathPart + "/"
+					} else {
+						modulePath = modulePath + pathPart + ".zygon"
+					}
+				}
+
+				source, err := os.ReadFile(modulePath)
+				if err != nil {
+					log.Fatal("no module at ", modulePath)
+				}
+				mod = Exec(string(source))
+			}
+
+			env.Set(module.Module.Value[len(module.Module.Value)-1], mod)
+
+			for _, symbol := range module.Symbols {
+				env.Set(symbol.Value[0], mod.Env.Pubs[symbol.Value[0]])
+			}
+
+		}
 	default:
 		log.Fatalf("eval error %T", node)
 	}
 	return nil
+}
+
+func Exec(sourceCode string) Module {
+	// the lexer needs to lex indents correctly
+	tokens := Tokenize(sourceCode + "\n")
+	log.Println(tokens)
+
+	ast := Parse(&tokens)
+	spew.Dump(ast)
+
+	env := &Environment{Store: make(map[string]Value), Outer: nil, Pubs: make(map[string]Value)}
+
+	return Module{env, Eval(ast, env)}
+
 }

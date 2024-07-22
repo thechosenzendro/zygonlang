@@ -10,7 +10,7 @@ TextLiteral [DONE]
 
 TextPart [DONE]
 
-PubStatement
+PubStatement [DONE]
 
 AssignmentStatement [DONE]
 
@@ -26,4 +26,4 @@ FunctionDeclaration [DONE]
 
 FunctionCall [DONE]
 
-TableLiteral
+TableLiteral [DONE]

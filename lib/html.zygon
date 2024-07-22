@@ -1,0 +1,2 @@
+pub p(text):
+    "<p>{text}</p>"

@@ -1,0 +1,7 @@
+pub server(router):
+    {
+        router: router
+    }
+
+pub serve(server):
+    server.router({}, {})
