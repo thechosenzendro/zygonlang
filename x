@@ -27,3 +27,6 @@ FunctionDeclaration [DONE]
 FunctionCall [DONE]
 
 TableLiteral [DONE]
+
+- change accessor syntax []
+- change modules to tables

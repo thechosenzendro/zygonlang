@@ -7,21 +7,20 @@ import (
 	"os"
 	"reflect"
 	"strconv"
-	"strings"
 	"unicode"
 
 	"github.com/davecgh/go-spew/spew"
 )
 
 func main() {
-	sourceCode, err := os.ReadFile("./main.zygon")
+	sourceCode, err := os.ReadFile("./examples/main.zygon")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	mod := Exec(string(sourceCode))
+	val := Exec(string(sourceCode))
 
-	log.Println(mod.Value)
+	log.Println(val)
 }
 
 type Stream[T comparable] struct {
@@ -86,6 +85,7 @@ const (
 	USING        = "USING"
 	TRUE         = "TRUE"
 	FALSE        = "FALSE"
+	DOT          = "DOT"
 )
 
 type Token struct {
@@ -119,7 +119,7 @@ func lexToken(source *Stream[rune]) []Token {
 		}
 	case unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_':
 		buf := []rune{}
-		for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_' || *source.peek(0) == '.') {
+		for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_') {
 			buf = append(buf, *source.peek(0))
 			source.consume(1)
 		}
@@ -145,7 +145,9 @@ func lexToken(source *Stream[rune]) []Token {
 			tokens = append(tokens, Token{IDENT, string(buf)})
 
 		}
-
+	case *source.peek(0) == '.':
+		tokens = append(tokens, Token{DOT, "."})
+		source.consume(1)
 	case unicode.IsDigit(*source.peek(0)):
 		buf := []rune{}
 		hasDecimal := false
@@ -305,11 +307,17 @@ type Program struct {
 	Body []Node
 }
 
-type Identifier struct {
-	Value []string
+type Ident interface {
+	Expression
+	Ident()
 }
 
-func (Identifier) Expr() {}
+type Identifier struct {
+	Value string
+}
+
+func (Identifier) Expr()  {}
+func (Identifier) Ident() {}
 
 type NumberLiteral struct {
 	Value float64
@@ -364,7 +372,7 @@ type Block struct {
 
 type UsingStatement struct {
 	Modules []struct {
-		Module  Identifier
+		Module  Ident
 		Symbols []Identifier
 	}
 }
@@ -416,6 +424,14 @@ type TableLiteral struct {
 
 func (TableLiteral) Expr() {}
 
+type AccessOperator struct {
+	Subject   Expression
+	Attribute Expression
+}
+
+func (AccessOperator) Expr()  {}
+func (AccessOperator) Ident() {}
+
 type (
 	prefixParseFn func(*Stream[Token]) Expression
 	infixParseFn  func(*Stream[Token], Expression) Expression
@@ -424,6 +440,7 @@ type (
 var prefixParseFns = map[TokenType]prefixParseFn{}
 var infixParseFns = map[TokenType]infixParseFn{}
 var precedences = map[TokenType]int{
+	DOT:          ACCESS,
 	IS:           EQUALS,
 	LESSER_THAN:  LESSGREATER,
 	GREATER_THAN: LESSGREATER,
@@ -476,6 +493,7 @@ func Parse(tokens *Stream[Token]) Program {
 	infixParseFns[AND] = parseInfixExpression
 	infixParseFns[OR] = parseInfixExpression
 	infixParseFns[LPAREN] = parseFunction
+	infixParseFns[DOT] = parseAccessOperator
 	for tokens.peek(0).Type != EOF {
 		if tokens.peek(0).Type != EOL {
 			var node Node = nil
@@ -498,6 +516,7 @@ func Parse(tokens *Stream[Token]) Program {
 const (
 	_ int = iota
 	LOWEST
+	ACCESS
 	ORPREC
 	ANDPREC
 	EQUALS
@@ -507,6 +526,17 @@ const (
 	PREFIX
 	CALL
 )
+
+func parseAccessOperator(tokens *Stream[Token], left Expression) Expression {
+	tokens.consume(1)
+	if tokens.peek(0).Type == IDENT {
+		return AccessOperator{Subject: left, Attribute: parseIdentifier(tokens)}
+	} else if tokens.peek(0).Type == LPAREN {
+		return AccessOperator{Subject: left, Attribute: parseGroupedExpression(tokens)}
+	}
+	log.Fatal("Not compatible with index")
+	return nil
+}
 
 func resolveLParen(tokens *Stream[Token]) Expression {
 	i := 0
@@ -651,14 +681,27 @@ func parseUsingStatement(tokens *Stream[Token]) Statement {
 			break
 		} else if isToken(tokens, IDENT, 0) {
 			mod := struct {
-				Module  Identifier
+				Module  Ident
 				Symbols []Identifier
-			}{Module: parseIdentifier(tokens).(Identifier)}
+			}{Module: parseIdentifier(tokens).(Ident)}
 
 			tokens.consume(1)
 
-			// means ident ends with a dot
-			if mod.Module.Value[len(mod.Module.Value)-1] == "" {
+			endsWithDot := false
+			i := 0
+			for {
+				if isToken(tokens, IDENT, i) {
+					endsWithDot = false
+				} else if isToken(tokens, DOT, i) {
+					endsWithDot = true
+				} else if isToken(tokens, COMMA, i) || isToken(tokens, LPAREN, i) {
+					break
+				}
+				i += 1
+			}
+
+			if endsWithDot {
+				tokens.consume(i)
 				if !isToken(tokens, LPAREN, 0) {
 					log.Fatal("no left paren in using")
 				}
@@ -846,7 +889,10 @@ func parseNumberLiteral(tokens *Stream[Token]) Expression {
 }
 
 func parseIdentifier(tokens *Stream[Token]) Expression {
-	return Identifier{strings.Split(tokens.peek(0).Value, ".")}
+	if tokens.peek(1).Type == DOT {
+		return parseExpression(tokens, LOWEST).(Ident)
+	}
+	return Identifier{tokens.peek(0).Value}
 }
 
 func parseTextLiteral(tokens *Stream[Token]) Expression {
@@ -897,24 +943,21 @@ const (
 	FUNCTION  = "Function"
 	TABLE     = "Table"
 	TABLE_KEY = "TableKey"
-	MODULE    = "Module"
 	BUILTIN   = "BuiltinFunction"
 )
 
-var stdlib = map[string]Module{
+var stdlib = map[string]Table{
 	"io": {
-		Env: &Environment{
-			Pubs: map[string]Value{
-				"log": Builtin{
-					Fn: func(args ...Value) Value {
-						var out bytes.Buffer
-						for _, arg := range args {
-							out.WriteString(arg.Inspect())
-						}
-						out.WriteString("\n")
-						fmt.Println(out.String())
-						return nil
-					},
+		Entries: map[Value]Value{
+			TableKey{"log"}: Builtin{
+				Fn: func(args ...Value) Value {
+					var out bytes.Buffer
+					for _, arg := range args {
+						out.WriteString(arg.Inspect())
+					}
+					out.WriteString("\n")
+					fmt.Println(out.String())
+					return nil
 				},
 			},
 		},
@@ -995,22 +1038,6 @@ type TableKey struct {
 func (tk TableKey) Type() string    { return TABLE_KEY }
 func (tk TableKey) Inspect() string { return tk.Value }
 
-type Module struct {
-	Env   *Environment
-	Value Value
-}
-
-func (m Module) Get(name string) (Value, bool) {
-	val, ok := m.Env.Pubs[name]
-	if !ok {
-		log.Fatal("no pub")
-	}
-	return val, ok
-}
-
-func (m Module) Type() string    { return MODULE }
-func (m Module) Inspect() string { return "Module" }
-
 type BuiltinFunction func(args ...Value) Value
 
 type Builtin struct {
@@ -1023,7 +1050,6 @@ func (b Builtin) Inspect() string { return "Builtin Function" }
 type Environment struct {
 	Store map[string]Value
 	Outer *Environment
-	Pubs  map[string]Value
 }
 
 func (e *Environment) Get(name string) (Value, bool) {
@@ -1159,31 +1185,26 @@ func Eval(_node Node, env *Environment) Value {
 		panic("No truthy case in case expr")
 	case AssignmentStatement:
 		val := Eval(node.Value, env)
-		env.Set(node.Name.Value[0], val)
+		env.Set(node.Name.Value, val)
 		return nil
-	case Identifier:
-		var e Gettable
-		e = env
-		for i, part := range node.Value {
-			val, ok := e.Get(part)
-
+	case AccessOperator:
+		subject := Eval(node.Subject, env)
+		switch subject := subject.(type) {
+		case Table:
+			val, ok := subject.Entries[TableKey{node.Attribute.(Identifier).Value}]
 			if !ok {
-				log.Fatal("identifier ", part, " not found")
+				log.Fatal("bad index")
 			}
-			switch v := val.(type) {
-			case Table:
-				if i == len(node.Value)-1 {
-					return v
-				} else {
-					e = v
-				}
-			case Module:
-				e = v
-			default:
-				return v
-			}
+			return val
+		default:
+			log.Fatalf("Cannot index type %T", subject)
 		}
-
+	case Identifier:
+		val, ok := env.Get(node.Value)
+		if !ok {
+			log.Fatalf("identifier %s not found", node.Value)
+		}
+		return val
 	case FunctionDeclaration:
 		parameters := []struct {
 			Name    Identifier
@@ -1211,14 +1232,14 @@ func Eval(_node Node, env *Environment) Value {
 		}
 		fn := Function{parameters, node.Body, env}
 		if node.Name != nil {
-			env.Set(node.Name.Value[0], Function{parameters, node.Body, env})
+			env.Set(node.Name.Value, Function{parameters, node.Body, env})
 		}
 		return fn
 	case FunctionCall:
 		fn := Eval(node.Fn, env)
 		switch function := fn.(type) {
 		case Function:
-			funcEnviron := &Environment{Store: make(map[string]Value), Outer: function.env, Pubs: make(map[string]Value)}
+			funcEnviron := &Environment{Store: make(map[string]Value), Outer: function.env}
 
 			for i, param := range function.Parameters {
 				if len(node.Arguments) > i {
@@ -1230,14 +1251,14 @@ func Eval(_node Node, env *Environment) Value {
 					if arg.Value == nil {
 						value = function.Parameters[i].Default
 					}
-					funcEnviron.Set(arg.Name.Value[0], value)
+					funcEnviron.Set(arg.Name.Value, value)
 				} else {
 					name := &param.Name
 					value := function.Parameters[i].Default
 					if value == nil {
 						log.Fatal("no default for ", function.Parameters[i].Name)
 					}
-					funcEnviron.Set(name.Value[0], value)
+					funcEnviron.Set(name.Value, value)
 				}
 			}
 			return Eval(function.Body, funcEnviron)
@@ -1257,17 +1278,17 @@ func Eval(_node Node, env *Environment) Value {
 				index += 1
 				entries[Number{float64(index)}] = Eval(entry.Value, env)
 			} else {
-				entries[TableKey{entry.Key.Value[0]}] = Eval(entry.Value, env)
+				entries[TableKey{entry.Key.Value}] = Eval(entry.Value, env)
 			}
 		}
 		return Table{entries}
 	case PubStatement:
 		switch pub := node.Public.(type) {
 		case AssignmentStatement:
-			env.Pubs[pub.Name.Value[0]] = Eval(pub.Value, env)
+			Eval(pub.Value, env)
 		case FunctionDeclaration:
 			if pub.Name != nil {
-				env.Pubs[pub.Name.Value[0]] = Eval(pub, env)
+				Eval(pub, env)
 			} else {
 				log.Fatal("anonymous function could not be made public")
 			}
@@ -1275,39 +1296,23 @@ func Eval(_node Node, env *Environment) Value {
 			log.Fatal("error in pub statement")
 		}
 	case UsingStatement:
-		rootModulePath := "./lib/"
-
+		rootModulePath := "./lib"
 		for _, module := range node.Modules {
-			var mod Module
-			var ok bool
-			if mod, ok = stdlib[node.Modules[0].Module.Value[0]]; ok {
-
-			} else {
-				modulePath := rootModulePath
-				if module.Module.Value[len(module.Module.Value)-1] == "" {
-					module.Module.Value = module.Module.Value[:len(module.Module.Value)-1]
-				}
-				for i, pathPart := range module.Module.Value {
-					if i != len(module.Module.Value)-1 {
-						modulePath = modulePath + pathPart + "/"
-					} else {
-						modulePath = modulePath + pathPart + ".zygon"
-					}
-				}
-
-				source, err := os.ReadFile(modulePath)
-				if err != nil {
-					log.Fatal("no module at ", modulePath)
-				}
-				mod = Exec(string(source))
+			modulePath := getModPath(module.Module, rootModulePath)
+			source, err := os.ReadFile(modulePath)
+			if err != nil {
+				log.Fatal("no module at ", modulePath)
 			}
-
-			env.Set(module.Module.Value[len(module.Module.Value)-1], mod)
-
+			mod := Exec(string(source))
+			switch m := module.Module.(type) {
+			case Identifier:
+				env.Set(m.Value, mod)
+			case AccessOperator:
+				env.Set(m.Subject.(Identifier).Value, m.Attribute)
+			}
 			for _, symbol := range module.Symbols {
-				env.Set(symbol.Value[0], mod.Env.Pubs[symbol.Value[0]])
+				env.Set(symbol.Value, mod.Env.Pubs[symbol.Value])
 			}
-
 		}
 	default:
 		log.Fatalf("eval error %T", node)
@@ -1315,7 +1320,17 @@ func Eval(_node Node, env *Environment) Value {
 	return nil
 }
 
-func Exec(sourceCode string) Module {
+func getModPath(module Ident, modulePath string) string {
+	switch mod := module.(type) {
+	case Identifier:
+		return modulePath + "/" + mod.Value + ".zygon"
+	case AccessOperator:
+		return modulePath + "/" + getModPath(mod.Attribute.(Ident), modulePath)
+	}
+	return ""
+}
+
+func Exec(sourceCode string) Value {
 	// the lexer needs to lex indents correctly
 	tokens := Tokenize(sourceCode + "\n")
 	log.Println(tokens)
@@ -1323,8 +1338,6 @@ func Exec(sourceCode string) Module {
 	ast := Parse(&tokens)
 	spew.Dump(ast)
 
-	env := &Environment{Store: make(map[string]Value), Outer: nil, Pubs: make(map[string]Value)}
-
-	return Module{env, Eval(ast, env)}
-
+	env := &Environment{Store: make(map[string]Value), Outer: nil}
+	return Eval(ast, env)
 }

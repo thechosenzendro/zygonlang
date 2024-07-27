@@ -1,4 +1,0 @@
-using io
-
-x: "World"
-io.log("Hello {x}!")
