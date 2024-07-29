@@ -28,5 +28,5 @@ FunctionCall [DONE]
 
 TableLiteral [DONE]
 
-- change accessor syntax []
-- change modules to tables
+- change accessor syntax [DONE]
+- change modules to tables [DONE]

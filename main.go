@@ -3,10 +3,10 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"log"
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"unicode"
 
 	"github.com/davecgh/go-spew/spew"
@@ -15,12 +15,15 @@ import (
 func main() {
 	sourceCode, err := os.ReadFile("./examples/main.zygon")
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
-	val := Exec(string(sourceCode))
-
-	log.Println(val)
+	val, _ := Exec(string(sourceCode))
+	if val != nil {
+		fmt.Println("Result: ", val.Inspect())
+	} else {
+		fmt.Println("Result: ", val)
+	}
 }
 
 type Stream[T comparable] struct {
@@ -154,7 +157,7 @@ func lexToken(source *Stream[rune]) []Token {
 		for source.peek(0) != nil && (unicode.IsDigit(*source.peek(0)) || *source.peek(0) == '_' || *source.peek(0) == '.') {
 			if *source.peek(0) == '.' {
 				if hasDecimal {
-					log.Fatal("Number literal cannot have more decimal parts")
+					panic("Number literal cannot have more decimal parts")
 				} else {
 					hasDecimal = true
 				}
@@ -163,7 +166,7 @@ func lexToken(source *Stream[rune]) []Token {
 			source.consume(1)
 		}
 		if buf[len(buf)-1] == '.' {
-			log.Fatal("No fractional part")
+			panic("No fractional part")
 		}
 		tokens = append(tokens, Token{NUM, string(buf)})
 
@@ -464,7 +467,7 @@ func parseGroupedExpression(tokens *Stream[Token]) Expression {
 	tokens.consume(1)
 	expr := parseExpression(tokens, LOWEST)
 	if tokens.peek(1).Type != RPAREN {
-		log.Fatal("no rparen")
+		panic("no rparen")
 	}
 	tokens.consume(1)
 	return expr
@@ -516,7 +519,6 @@ func Parse(tokens *Stream[Token]) Program {
 const (
 	_ int = iota
 	LOWEST
-	ACCESS
 	ORPREC
 	ANDPREC
 	EQUALS
@@ -525,6 +527,7 @@ const (
 	PRODUCT
 	PREFIX
 	CALL
+	ACCESS
 )
 
 func parseAccessOperator(tokens *Stream[Token], left Expression) Expression {
@@ -534,8 +537,7 @@ func parseAccessOperator(tokens *Stream[Token], left Expression) Expression {
 	} else if tokens.peek(0).Type == LPAREN {
 		return AccessOperator{Subject: left, Attribute: parseGroupedExpression(tokens)}
 	}
-	log.Fatal("Not compatible with index")
-	return nil
+	panic("Not compatible with index")
 }
 
 func resolveLParen(tokens *Stream[Token]) Expression {
@@ -601,7 +603,7 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		}
 		tokens.consume(1)
 		if !isToken(tokens, COLON, 0) {
-			log.Fatal("no colon in function declaration")
+			panic("no colon in function declaration")
 		}
 		tokens.consume(1)
 		expr.Body = parseBlock(tokens)
@@ -652,7 +654,7 @@ func parseAssignmentStatement(tokens *Stream[Token]) Statement {
 	tokens.consume(1)
 
 	if !isToken(tokens, COLON, 0) {
-		log.Fatal("no colon in assignment statement")
+		panic("no colon in assignment statement")
 	}
 
 	tokens.consume(1)
@@ -673,6 +675,19 @@ func parsePubStatement(tokens *Stream[Token]) Statement {
 	return stmt
 }
 
+func parseUsingPath(tokens *Stream[Token]) Ident {
+	if isToken(tokens, IDENT, 0) {
+		if (isToken(tokens, DOT, 1) && isToken(tokens, LPAREN, 2)) || (isToken(tokens, EOL, 1) || isToken(tokens, COMMA, 1)) {
+			return Identifier{tokens.peek(0).Value}
+		} else if isToken(tokens, DOT, 1) && isToken(tokens, IDENT, 2) {
+			subject := Identifier{tokens.peek(0).Value}
+			tokens.consume(2)
+			return AccessOperator{Subject: subject, Attribute: parseUsingPath(tokens)}
+		}
+	}
+	panic("a")
+}
+
 func parseUsingStatement(tokens *Stream[Token]) Statement {
 	tokens.consume(1)
 	stmt := UsingStatement{}
@@ -683,27 +698,18 @@ func parseUsingStatement(tokens *Stream[Token]) Statement {
 			mod := struct {
 				Module  Ident
 				Symbols []Identifier
-			}{Module: parseIdentifier(tokens).(Ident)}
-
+			}{Module: parseUsingPath(tokens)}
+			fmt.Println(mod.Module)
 			tokens.consume(1)
-
 			endsWithDot := false
-			i := 0
-			for {
-				if isToken(tokens, IDENT, i) {
-					endsWithDot = false
-				} else if isToken(tokens, DOT, i) {
-					endsWithDot = true
-				} else if isToken(tokens, COMMA, i) || isToken(tokens, LPAREN, i) {
-					break
-				}
-				i += 1
+			if isToken(tokens, DOT, 0) {
+				endsWithDot = true
 			}
 
 			if endsWithDot {
-				tokens.consume(i)
+				tokens.consume(1)
 				if !isToken(tokens, LPAREN, 0) {
-					log.Fatal("no left paren in using")
+					panic("no left paren in using")
 				}
 				tokens.consume(1)
 				for {
@@ -779,16 +785,16 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 		tokens.consume(1)
 	}
 	if !isToken(tokens, COLON, 0) {
-		log.Fatal("no colon in case expression")
+		panic("no colon in case expression")
 	}
 	tokens.consume(1)
 	if !isToken(tokens, EOL, 0) {
-		log.Fatal("no newline in case expression")
+		panic("no newline in case expression")
 	}
 	tokens.consume(1)
 
 	if !isToken(tokens, INDENT, 0) {
-		log.Fatal("case expression must contain indentation")
+		panic("case expression must contain indentation")
 	}
 	indentLevel := tokens.peek(0).Value
 	tokens.consume(1)
@@ -800,7 +806,7 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 		pattern := parseExpression(tokens, LOWEST)
 		tokens.consume(1)
 		if !isToken(tokens, COLON, 0) {
-			log.Fatal("no colon in case expression")
+			panic("no colon in case expression")
 		}
 		tokens.consume(1)
 		block := parseBlock(tokens)
@@ -825,7 +831,7 @@ func parseBlock(tokens *Stream[Token]) Block {
 	}
 	tokens.consume(1)
 	if !isToken(tokens, INDENT, 0) {
-		log.Fatal("no indent in case expression")
+		panic("no indent in case expression")
 	}
 	indentLevel := tokens.peek(0).Value
 	tokens.consume(1)
@@ -883,15 +889,12 @@ func parsePrefixExpression(tokens *Stream[Token]) Expression {
 func parseNumberLiteral(tokens *Stream[Token]) Expression {
 	num, err := strconv.ParseFloat(tokens.peek(0).Value, 64)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	return NumberLiteral{num}
 }
 
 func parseIdentifier(tokens *Stream[Token]) Expression {
-	if tokens.peek(1).Type == DOT {
-		return parseExpression(tokens, LOWEST).(Ident)
-	}
 	return Identifier{tokens.peek(0).Value}
 }
 
@@ -915,7 +918,7 @@ func parseTextLiteral(tokens *Stream[Token]) Expression {
 func parseExpression(tokens *Stream[Token], precedence int) Expression {
 	prefix := prefixParseFns[tokens.peek(0).Type]
 	if prefix == nil {
-		log.Fatalf("No prefix parser for %s", tokens.peek(0))
+		panic(fmt.Sprintf("No prefix parser for %s", tokens.peek(0)))
 	}
 	leftExpr := prefix(tokens)
 
@@ -946,8 +949,8 @@ const (
 	BUILTIN   = "BuiltinFunction"
 )
 
-var stdlib = map[string]Table{
-	"io": {
+var stdlib = map[Ident]Table{
+	Identifier{"io"}: {
 		Entries: map[Value]Value{
 			TableKey{"log"}: Builtin{
 				Fn: func(args ...Value) Value {
@@ -1026,7 +1029,7 @@ func (t Table) Inspect() string {
 func (t Table) Get(name string) (Value, bool) {
 	val, ok := t.Entries[TableKey{name}]
 	if !ok {
-		log.Fatal("no ident")
+		panic("no ident")
 	}
 	return val, ok
 }
@@ -1114,7 +1117,7 @@ func Eval(_node Node, env *Environment) Value {
 			case Boolean:
 				return Boolean{!right.Value}
 			default:
-				log.Fatal("non boolean passed to not")
+				panic("non boolean passed to not")
 			}
 		case MINUS:
 			switch right := right.(type) {
@@ -1176,7 +1179,7 @@ func Eval(_node Node, env *Environment) Value {
 				patternResult = Boolean{reflect.DeepEqual(Eval(node.Subject, env), Eval(_case.Pattern, env))}
 			}
 			if patternResult.Type() != BOOL {
-				log.Fatal("pattern result is not a boolean")
+				panic("pattern result is not a boolean")
 			}
 			if patternResult.Inspect() == "true" {
 				return Eval(_case.Block, env)
@@ -1189,20 +1192,28 @@ func Eval(_node Node, env *Environment) Value {
 		return nil
 	case AccessOperator:
 		subject := Eval(node.Subject, env)
+		index := TableKey{}
+		switch attribute := node.Attribute.(type) {
+		case Identifier:
+			index.Value = attribute.Value
+		case FunctionCall:
+			index.Value = attribute.Fn.(Identifier).Value
+		}
 		switch subject := subject.(type) {
 		case Table:
-			val, ok := subject.Entries[TableKey{node.Attribute.(Identifier).Value}]
+			val, ok := subject.Entries[index]
 			if !ok {
-				log.Fatal("bad index")
+				panic(fmt.Sprintf("bad index %s, possible values: %v", index.Value, subject.Entries))
 			}
 			return val
+
 		default:
-			log.Fatalf("Cannot index type %T", subject)
+			panic(fmt.Sprintf("Cannot index type %T", subject))
 		}
 	case Identifier:
 		val, ok := env.Get(node.Value)
 		if !ok {
-			log.Fatalf("identifier %s not found", node.Value)
+			panic(fmt.Sprintf("identifier %s not found", node.Value))
 		}
 		return val
 	case FunctionDeclaration:
@@ -1256,7 +1267,7 @@ func Eval(_node Node, env *Environment) Value {
 					name := &param.Name
 					value := function.Parameters[i].Default
 					if value == nil {
-						log.Fatal("no default for ", function.Parameters[i].Name)
+						panic(fmt.Sprintf("no default for %s", function.Parameters[i].Name))
 					}
 					funcEnviron.Set(name.Value, value)
 				}
@@ -1285,59 +1296,108 @@ func Eval(_node Node, env *Environment) Value {
 	case PubStatement:
 		switch pub := node.Public.(type) {
 		case AssignmentStatement:
-			Eval(pub.Value, env)
+			Eval(pub, env)
+			env.Set("pub "+pub.Name.Value, env.Store[pub.Name.Value])
 		case FunctionDeclaration:
 			if pub.Name != nil {
 				Eval(pub, env)
+				env.Set("pub "+pub.Name.Value, env.Store[pub.Name.Value])
 			} else {
-				log.Fatal("anonymous function could not be made public")
+				panic("anonymous function could not be made public")
 			}
 		default:
-			log.Fatal("error in pub statement")
+			panic("error in pub statement")
 		}
 	case UsingStatement:
 		rootModulePath := "./lib"
 		for _, module := range node.Modules {
-			modulePath := getModPath(module.Module, rootModulePath)
-			source, err := os.ReadFile(modulePath)
-			if err != nil {
-				log.Fatal("no module at ", modulePath)
-			}
-			mod := Exec(string(source))
-			switch m := module.Module.(type) {
-			case Identifier:
-				env.Set(m.Value, mod)
-			case AccessOperator:
-				env.Set(m.Subject.(Identifier).Value, m.Attribute)
-			}
-			for _, symbol := range module.Symbols {
-				env.Set(symbol.Value, mod.Env.Pubs[symbol.Value])
+
+			if builtin, ok := stdlib[module.Module]; ok {
+				switch m := module.Module.(type) {
+				case Identifier:
+					env.Set(m.Value, builtin)
+				case AccessOperator:
+					env.Set(m.Subject.(Identifier).Value, unwrap(m.Attribute.(Ident), builtin))
+				}
+				fmt.Print("Env: \n\n\n")
+				for key := range builtin.Entries {
+					fmt.Println(key.Inspect())
+				}
+				for _, symbol := range module.Symbols {
+					env.Set(symbol.Value, builtin.Entries[TableKey(symbol)])
+				}
+
+			} else {
+
+				modulePath := rootModulePath + getModPath(module.Module)
+				source, err := os.ReadFile(modulePath)
+				if err != nil {
+					panic(fmt.Sprintf("no module at %s", modulePath))
+				}
+				_, e := Exec(string(source))
+				pubTable := publicToTable(e)
+				switch m := module.Module.(type) {
+				case Identifier:
+					env.Set(m.Value, pubTable)
+				case AccessOperator:
+					env.Set(m.Subject.(Identifier).Value, unwrap(m.Attribute.(Ident), pubTable))
+				}
+				fmt.Print("Env: \n\n\n")
+				for key := range pubTable.Entries {
+					fmt.Println(key.Inspect())
+				}
+				for _, symbol := range module.Symbols {
+					if val, ok := e.Get("pub " + symbol.Value); ok {
+						env.Set(symbol.Value, val)
+					}
+				}
+
 			}
 		}
 	default:
-		log.Fatalf("eval error %T", node)
+		panic(fmt.Sprintf("eval error %T", node))
 	}
 	return nil
 }
 
-func getModPath(module Ident, modulePath string) string {
+func publicToTable(e *Environment) Table {
+	table := Table{Entries: map[Value]Value{}}
+	for key, value := range e.Store {
+		if strings.HasPrefix(key, "pub ") {
+			table.Entries[TableKey{strings.SplitAfter(key, "pub ")[1]}] = value
+		}
+	}
+	return table
+}
+
+func unwrap(m Ident, toPut Value) Value {
+	switch m := m.(type) {
+	case AccessOperator:
+		return Table{Entries: map[Value]Value{TableKey{m.Subject.(Identifier).Value}: unwrap(m.Attribute.(Ident), toPut)}}
+	case Identifier:
+		return Table{Entries: map[Value]Value{TableKey(m): toPut}}
+	}
+	panic("unwrap error")
+}
+
+func getModPath(module Ident) string {
 	switch mod := module.(type) {
 	case Identifier:
-		return modulePath + "/" + mod.Value + ".zygon"
+		return "/" + mod.Value + ".zygon"
 	case AccessOperator:
-		return modulePath + "/" + getModPath(mod.Attribute.(Ident), modulePath)
+		return "/" + mod.Subject.(Identifier).Value + "/" + getModPath(mod.Attribute.(Ident))
 	}
 	return ""
 }
 
-func Exec(sourceCode string) Value {
+func Exec(sourceCode string) (Value, *Environment) {
 	// the lexer needs to lex indents correctly
 	tokens := Tokenize(sourceCode + "\n")
-	log.Println(tokens)
+	fmt.Println(tokens)
 
 	ast := Parse(&tokens)
 	spew.Dump(ast)
 
 	env := &Environment{Store: make(map[string]Value), Outer: nil}
-	return Eval(ast, env)
+	return Eval(ast, env), env
 }

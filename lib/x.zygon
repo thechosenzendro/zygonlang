@@ -1,0 +1,3 @@
+pub y(i): i
+
+pub const: 1
