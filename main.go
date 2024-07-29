@@ -1187,9 +1187,13 @@ func Eval(_node Node, env *Environment) Value {
 		}
 		panic("No truthy case in case expr")
 	case AssignmentStatement:
-		val := Eval(node.Value, env)
-		env.Set(node.Name.Value, val)
-		return nil
+		if _, ok := env.Get(node.Name.Value); !ok {
+			val := Eval(node.Value, env)
+			env.Set(node.Name.Value, val)
+			return nil
+		} else {
+			panic(fmt.Sprintf("Cannot reassign identifier %s", node.Name.Value))
+		}
 	case AccessOperator:
 		subject := Eval(node.Subject, env)
 		index := TableKey{}

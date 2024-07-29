@@ -1,3 +1,2 @@
-using io.(log)
-
-log("Yippee")
+x: 1
+x: 2
