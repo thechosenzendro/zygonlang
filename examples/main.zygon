@@ -1,4 +1,10 @@
-using io
+using table, io
 
-io.get(">")
-io.log(_)
+x: {
+    hello: "world",
+    foo: "bar"
+}
+
+table.change(x, {hello: "Adam"})
+
+io.log(_.hello, x.hello)

@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/tiendc/go-deepcopy"
 )
 
 func main() {
@@ -988,6 +989,40 @@ var stdlib = map[Ident]Table{
 			},
 		},
 	},
+	Identifier{"table"}: {
+		Entries: map[Value]Value{
+			TableKey{"change"}: Builtin{
+				Fn: func(args ...Value) Value {
+					if len(args) != 2 {
+						panic("supply the table to change and table that contains the changes for table.change")
+					}
+					table := args[0]
+					switch table := table.(type) {
+					case Table:
+					default:
+						panic(fmt.Sprintf("first argument to table.change must be a Table, not a %T", table))
+					}
+					var newTable Table
+					deepcopy.Copy(&newTable, table)
+					changes := args[1]
+
+					switch changes := changes.(type) {
+					case Table:
+					default:
+						panic(fmt.Sprintf("second argument to table.change must be a Table, not a %T", changes))
+					}
+
+					checkedChanges := changes.(Table)
+
+					for key, value := range checkedChanges.Entries {
+						newTable.Entries[key] = value
+					}
+
+					return newTable
+				},
+			},
+		},
+	},
 }
 
 type Number struct {
@@ -1362,10 +1397,6 @@ func Eval(_node Node, env *Environment) Value {
 				case AccessOperator:
 					env.Set(m.Subject.(Identifier).Value, unwrap(m.Attribute.(Ident), builtin))
 				}
-				fmt.Print("Env: \n\n\n")
-				for key := range builtin.Entries {
-					fmt.Println(key.Inspect())
-				}
 				for _, symbol := range module.Symbols {
 					env.Set(symbol.Value, builtin.Entries[TableKey(symbol)])
 				}
@@ -1442,5 +1473,8 @@ func Exec(sourceCode string) (Value, *Environment) {
 	spew.Dump(ast)
 
 	env := &Environment{Store: make(map[string]Value), Outer: nil}
+
+	fmt.Print("\n\n===PROGRAM OUTPUT===\n\n")
+
 	return Eval(ast, env), env
 }
