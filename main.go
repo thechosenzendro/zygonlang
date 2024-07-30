@@ -965,6 +965,7 @@ var stdlib = map[Ident]Table{
 					var out bytes.Buffer
 					for _, arg := range args {
 						out.WriteString(arg.Inspect())
+						out.WriteString(" ")
 					}
 					out.WriteString("\n")
 					fmt.Print(out.String())

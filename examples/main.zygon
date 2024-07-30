@@ -5,6 +5,6 @@ x: {
     foo: "bar"
 }
 
-table.change(x, {hello: "Adam"})
+y: table.change(x, {hello: "Adam"})
 
-io.log(_.hello, x.hello)
+io.log(y.hello, x.hello)
