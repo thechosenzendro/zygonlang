@@ -1,7 +1,4 @@
-table: {
-    21
-}
+using io
 
-x: 0
-
-table.(x)
+io.get(">")
+io.log(_)

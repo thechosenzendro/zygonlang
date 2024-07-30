@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"os"
@@ -965,8 +966,24 @@ var stdlib = map[Ident]Table{
 						out.WriteString(arg.Inspect())
 					}
 					out.WriteString("\n")
-					fmt.Println(out.String())
+					fmt.Print(out.String())
 					return nil
+				},
+			},
+			TableKey{"get"}: Builtin{
+				Fn: func(args ...Value) Value {
+					if len(args) == 1 {
+						prompt := args[0].Inspect()
+						fmt.Print(prompt)
+						var input string
+						scanner := bufio.NewScanner(os.Stdin)
+						if scanner.Scan() {
+							input = scanner.Text()
+						}
+						return Text{input}
+					} else {
+						panic("supply prompt to io.get")
+					}
 				},
 			},
 		},
@@ -991,8 +1008,8 @@ type Text struct {
 	Value string
 }
 
-func (s Text) Type() string    { return TEXT }
-func (s Text) Inspect() string { return "\"" + s.Value + "\"" }
+func (t Text) Type() string    { return TEXT }
+func (t Text) Inspect() string { return t.Value }
 
 type Function struct {
 	Parameters []struct {
@@ -1026,7 +1043,23 @@ func (t Table) Inspect() string {
 	out.WriteString("{\n")
 	tableIndentLevel += 4
 	for key, value := range t.Entries {
-		out.WriteString(fmt.Sprintf("%s%s: %s\n", indent(), key.Inspect(), value.Inspect()))
+		var k string
+		var v string
+		switch key.(type) {
+		case Text:
+			k = "\"" + key.Inspect() + "\""
+		default:
+			k = key.Inspect()
+		}
+
+		switch value.(type) {
+		case Text:
+			v = "\"" + value.Inspect() + "\""
+		default:
+			v = value.Inspect()
+		}
+
+		out.WriteString(fmt.Sprintf("%s%s: %s\n", indent(), k, v))
 	}
 	tableIndentLevel -= 4
 	out.WriteString(fmt.Sprintf("%s}\n", indent()))
