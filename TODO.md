@@ -6,7 +6,10 @@
 - add io.get (input) [DONE]
 - decide on the style rules of the language
 - add error value
+- organize the code better
+- pattern matching with tables
 - proper errors
+
 
 Error: Cannot reassign identifier x
 
