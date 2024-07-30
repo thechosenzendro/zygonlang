@@ -427,6 +427,12 @@ type TableLiteral struct {
 
 func (TableLiteral) Expr() {}
 
+type Grouped struct {
+	Value Expression
+}
+
+func (Grouped) Expr() {}
+
 type AccessOperator struct {
 	Subject   Expression
 	Attribute Expression
@@ -535,7 +541,7 @@ func parseAccessOperator(tokens *Stream[Token], left Expression) Expression {
 	if tokens.peek(0).Type == IDENT {
 		return AccessOperator{Subject: left, Attribute: parseIdentifier(tokens)}
 	} else if tokens.peek(0).Type == LPAREN {
-		return AccessOperator{Subject: left, Attribute: parseGroupedExpression(tokens)}
+		return AccessOperator{Subject: left, Attribute: Grouped{parseGroupedExpression(tokens)}}
 	}
 	panic("Not compatible with index")
 }
@@ -1196,18 +1202,18 @@ func Eval(_node Node, env *Environment) Value {
 		}
 	case AccessOperator:
 		subject := Eval(node.Subject, env)
-		index := TableKey{}
+		var index Value
 		switch attribute := node.Attribute.(type) {
 		case Identifier:
-			index.Value = attribute.Value
-		case FunctionCall:
-			index.Value = attribute.Fn.(Identifier).Value
+			index = TableKey(attribute)
+		case Grouped:
+			index = Eval(attribute.Value, env)
 		}
 		switch subject := subject.(type) {
 		case Table:
 			val, ok := subject.Entries[index]
 			if !ok {
-				panic(fmt.Sprintf("bad index %s, possible values: %v", index.Value, subject.Entries))
+				panic(fmt.Sprintf("bad index %s on table %s", index.Inspect(), subject.Inspect()))
 			}
 			return val
 
