@@ -1,10 +1,6 @@
 using table, io
 
-x: {
-    hello: "world",
-    foo: "bar"
-}
+add_hello(t):
+    table.change(t, {hello: "world"})
 
-y: table.change(x, {hello: "Adam"})
-
-io.log(y.hello, x.hello)
+add_hello({})
