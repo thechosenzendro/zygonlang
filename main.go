@@ -1225,6 +1225,10 @@ func Eval(_node Node, env *Environment) Value {
 			return Boolean{left == right}
 		case IS_NOT:
 			return Boolean{left != right}
+		case AND:
+			return Boolean{left.(Boolean).Value && right.(Boolean).Value}
+		case OR:
+			return Boolean{left.(Boolean).Value || right.(Boolean).Value}
 		}
 	case Block:
 		var res Value
@@ -1252,6 +1256,9 @@ func Eval(_node Node, env *Environment) Value {
 
 			} else {
 				patternResult = Boolean{reflect.DeepEqual(Eval(node.Subject, env), Eval(_case.Pattern, env))}
+			}
+			if patternResult == nil {
+				panic("pattern does not eval to anything")
 			}
 			if patternResult.Type() != BOOL {
 				panic("pattern result is not a boolean")
