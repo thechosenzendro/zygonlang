@@ -91,6 +91,7 @@ const (
 	TRUE         = "TRUE"
 	FALSE        = "FALSE"
 	DOT          = "DOT"
+	DEFAULT      = "DEFAULT"
 )
 
 type Token struct {
@@ -146,6 +147,8 @@ func lexToken(source *Stream[rune]) []Token {
 			tokens = append(tokens, Token{TRUE, "true"})
 		} else if string(buf) == "false" {
 			tokens = append(tokens, Token{FALSE, "false"})
+		} else if string(buf) == "default" {
+			tokens = append(tokens, Token{DEFAULT, "default"})
 		} else {
 			tokens = append(tokens, Token{IDENT, string(buf)})
 
@@ -367,6 +370,7 @@ type CaseExpression struct {
 		Pattern Expression
 		Block   Block
 	}
+	Default *Block
 }
 
 func (CaseExpression) Expr() {}
@@ -811,21 +815,39 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 		if tok.Type == DEDENT && tok.Value == indentLevel {
 			break
 		}
-		pattern := parseExpression(tokens, LOWEST)
-		tokens.consume(1)
-		if !isToken(tokens, COLON, 0) {
-			panic("no colon in case expression")
-		}
-		tokens.consume(1)
-		block := parseBlock(tokens)
-		tokens.consume(1)
-		if isToken(tokens, EOL, 0) {
+		if isToken(tokens, DEFAULT, 0) {
 			tokens.consume(1)
+			if !isToken(tokens, COLON, 0) {
+				panic("no colon in case expression")
+			}
+			tokens.consume(1)
+			block := parseBlock(tokens)
+			tokens.consume(1)
+			if isToken(tokens, EOL, 0) {
+				tokens.consume(1)
+			}
+			if expr.Default == nil {
+				expr.Default = &block
+			} else {
+				panic("cannot have more than one default in case")
+			}
+		} else {
+			pattern := parseExpression(tokens, LOWEST)
+			tokens.consume(1)
+			if !isToken(tokens, COLON, 0) {
+				panic("no colon in case expression")
+			}
+			tokens.consume(1)
+			block := parseBlock(tokens)
+			tokens.consume(1)
+			if isToken(tokens, EOL, 0) {
+				tokens.consume(1)
+			}
+			expr.Cases = append(expr.Cases, struct {
+				Pattern Expression
+				Block   Block
+			}{pattern, block})
 		}
-		expr.Cases = append(expr.Cases, struct {
-			Pattern Expression
-			Block   Block
-		}{pattern, block})
 	}
 	return expr
 }
@@ -1318,6 +1340,9 @@ func Eval(_node Node, env *Environment) Value {
 			if patternResult.Inspect() == "true" {
 				return Eval(_case.Block, env)
 			}
+		}
+		if node.Default != nil {
+			return Eval(*node.Default, env)
 		}
 		panic("No truthy case in case expr")
 	case AssignmentStatement:

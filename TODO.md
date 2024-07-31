@@ -9,7 +9,7 @@
 - decide on the style rules of the language [DONE]
 - add error value [DONE]
 - organize the code better
-- add a default keyword for case
+- add a default keyword for case [DONE]
 - pattern matching with tables
 - add ... operator
 - add variadic arguments
