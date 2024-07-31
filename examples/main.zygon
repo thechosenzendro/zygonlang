@@ -1,3 +1,6 @@
-using program
+using io
+x(y):
+    io.log(y)
+    y
 
-program.crash("uhoh")
+x(true) and x(true)

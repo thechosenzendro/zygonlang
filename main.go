@@ -1214,8 +1214,34 @@ func Eval(_node Node, env *Environment) Value {
 			}
 		}
 	case InfixExpression:
+		switch node.Operator {
+		case IS:
+			return Boolean{Eval(node.Left, env) == Eval(node.Right, env)}
+		case IS_NOT:
+			return Boolean{Eval(node.Left, env) != Eval(node.Right, env)}
+		case AND:
+			return Boolean{Eval(node.Left, env).(Boolean).Value && Eval(node.Right, env).(Boolean).Value}
+		case OR:
+			left := Eval(node.Left, env)
+			if left.Type() != BOOL {
+				panic("left arg in or does not eval to a boolean")
+			}
+			if left.Inspect() == "true" {
+				return Boolean{true}
+			}
+			right := Eval(node.Right, env)
+			if right.Type() != BOOL {
+				panic("right arg in or does not eval to a boolean")
+			}
+			if right.Inspect() == "true" {
+				return Boolean{true}
+			} else {
+				return Boolean{false}
+			}
+		}
 		left := Eval(node.Left, env)
 		right := Eval(node.Right, env)
+
 		if left.Type() == NUMBER && right.Type() == NUMBER {
 			switch node.Operator {
 			case PLUS:
@@ -1233,16 +1259,7 @@ func Eval(_node Node, env *Environment) Value {
 
 			}
 		}
-		switch node.Operator {
-		case IS:
-			return Boolean{left == right}
-		case IS_NOT:
-			return Boolean{left != right}
-		case AND:
-			return Boolean{left.(Boolean).Value && right.(Boolean).Value}
-		case OR:
-			return Boolean{left.(Boolean).Value || right.(Boolean).Value}
-		}
+
 	case Block:
 		var res Value
 		for _, nd := range node.Body {
