@@ -17,11 +17,11 @@ io.log("Hello World")
 ## Fibonacci sequence
 
 ```python
-using io
+using io, program
 
 fib(n):
     case:
-        n < 0:  io.fatal("Incorrect number {n}")
+        n < 0:  program.crash("Incorrect number {n}")
         n is 0: 0
         n is 1 or n is 2: 1
         true: fib(n-1) + fib(n-2)
