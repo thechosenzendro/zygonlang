@@ -1,6 +1,0 @@
-using table, io
-
-add_hello(t):
-    table.change(t, {hello: "world"})
-
-add_hello({})
