@@ -15,6 +15,7 @@
 - add variadic arguments
 - named arguments support for builtin functions
 - proper errors
+- add some way of documentation
 
 Error: Cannot reassign identifier x
 
