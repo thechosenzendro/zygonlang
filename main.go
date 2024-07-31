@@ -1024,6 +1024,19 @@ var stdlib = map[Ident]Table{
 			},
 		},
 	},
+	Identifier{"program"}: {
+		Entries: map[Value]Value{
+			TableKey{"crash"}: Builtin{
+				Fn: func(args ...Value) Value {
+					if len(args) != 1 {
+						panic("supply only one argument to io.log")
+					}
+					fmt.Printf("Crash: %s\n", args[0].Inspect())
+					os.Exit(0)
+					return nil
+				},
+			}},
+	},
 }
 
 type Number struct {

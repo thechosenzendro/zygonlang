@@ -5,13 +5,15 @@
 - add a way to change a table [DONE]
 - add io.get (input) [DONE]
 - make AND and OR short circuiting
-- add io.fatal (panic)
+- add program.crash (panic) [DONE]
 - decide on the style rules of the language
 - add error value
 - organize the code better
 - pattern matching with tables
+- add ... operator
+- add variadic arguments
+- named arguments support for builtin functions
 - proper errors
-
 
 Error: Cannot reassign identifier x
 
