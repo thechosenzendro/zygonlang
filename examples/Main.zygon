@@ -1,0 +1,9 @@
+using IO, Errors, Program
+
+favorite_food: IO.get("Your favorite food: ")
+case:
+    favorite_food is "tomato":
+        Errors.error("Get outta here!")
+        Program.crash(_)
+    
+    true: IO.log("{favorite_food} sounds delicious!")

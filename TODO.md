@@ -6,9 +6,10 @@
 - add IO.get (input) [DONE]
 - make OR short circuiting [DONE]
 - add Program.crash (panic) [DONE]
-- decide on the style rules of the language
-- add error value
+- decide on the style rules of the language [DONE]
+- add error value [DONE]
 - organize the code better
+- add a default keyword for case
 - pattern matching with tables
 - add ... operator
 - add variadic arguments

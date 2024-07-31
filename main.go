@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	sourceCode, err := os.ReadFile("./examples/main.zygon")
+	sourceCode, err := os.ReadFile("./examples/Main.zygon")
 	if err != nil {
 		panic(err)
 	}
@@ -955,6 +955,7 @@ const (
 	TABLE     = "Table"
 	TABLE_KEY = "TableKey"
 	BUILTIN   = "BuiltinFunction"
+	ERROR     = "Error"
 )
 
 var stdlib = map[Ident]Table{
@@ -1034,6 +1035,20 @@ var stdlib = map[Ident]Table{
 					fmt.Printf("Crash: %s\n", args[0].Inspect())
 					os.Exit(0)
 					return nil
+				},
+			}},
+	},
+	Identifier{"Errors"}: {
+		Entries: map[Value]Value{
+			TableKey{"error"}: Builtin{
+				Fn: func(args ...Value) Value {
+					if len(args) != 1 {
+						panic("supply only one argument to Errors.error")
+					}
+					if args[0].Type() != TEXT {
+						panic("you need to supply text to Errors.error")
+					}
+					return Error{args[0].(Text).Value}
 				},
 			}},
 	},
@@ -1137,6 +1152,13 @@ type Builtin struct {
 
 func (b Builtin) Type() string    { return BUILTIN }
 func (b Builtin) Inspect() string { return "Builtin Function" }
+
+type Error struct {
+	Value string
+}
+
+func (e Error) Type() string    { return ERROR }
+func (e Error) Inspect() string { return fmt.Sprintf("error(%s)", e.Value) }
 
 type Environment struct {
 	Store map[string]Value
