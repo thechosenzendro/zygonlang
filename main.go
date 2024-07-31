@@ -958,7 +958,7 @@ const (
 )
 
 var stdlib = map[Ident]Table{
-	Identifier{"io"}: {
+	Identifier{"IO"}: {
 		Entries: map[Value]Value{
 			TableKey{"log"}: Builtin{
 				Fn: func(args ...Value) Value {
@@ -990,7 +990,7 @@ var stdlib = map[Ident]Table{
 			},
 		},
 	},
-	Identifier{"table"}: {
+	Identifier{"Table"}: {
 		Entries: map[Value]Value{
 			TableKey{"change"}: Builtin{
 				Fn: func(args ...Value) Value {
@@ -1024,7 +1024,7 @@ var stdlib = map[Ident]Table{
 			},
 		},
 	},
-	Identifier{"program"}: {
+	Identifier{"Program"}: {
 		Entries: map[Value]Value{
 			TableKey{"crash"}: Builtin{
 				Fn: func(args ...Value) Value {

@@ -2,10 +2,10 @@
 - change modules to tables [DONE]
 - make the code robust
 - add the static analyzer (the whole reason this project started in the first place)
-- add a way to change a table [DONE]
-- add io.get (input) [DONE]
+- add a way to change a table (Table.change) [DONE]
+- add IO.get (input) [DONE]
 - make OR short circuiting [DONE]
-- add program.crash (panic) [DONE]
+- add Program.crash (panic) [DONE]
 - decide on the style rules of the language
 - add error value
 - organize the code better

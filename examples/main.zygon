@@ -1,6 +1,0 @@
-using io
-x(y):
-    io.log(y)
-    y
-
-x(true) and x(true)

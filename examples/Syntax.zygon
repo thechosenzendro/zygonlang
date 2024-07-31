@@ -10,7 +10,7 @@ table:
 table.x
 
 case:
-	1 is 1: io.log("Yippeee")
+	1 is 1: IO.log("Yippeee")
 	2 is not 3: error("bruh")
 
 1 + 1
@@ -35,4 +35,4 @@ serve(_)
 
 pub x
 
-using x, y.(a, b)
+using X, Y.(a, b)
