@@ -963,10 +963,10 @@ var stdlib = map[Ident]Table{
 			TableKey{"log"}: Builtin{
 				Fn: func(args ...Value) Value {
 					var out bytes.Buffer
-					for _, arg := range args {
-						out.WriteString(arg.Inspect())
-						out.WriteString(" ")
+					if len(args) != 1 {
+						panic("supply only one argument to io.log")
 					}
+					out.WriteString(args[0].Inspect())
 					out.WriteString("\n")
 					fmt.Print(out.String())
 					return nil
