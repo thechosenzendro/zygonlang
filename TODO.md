@@ -4,6 +4,8 @@
 - add the static analyzer (the whole reason this project started in the first place)
 - add a way to change a table [DONE]
 - add io.get (input) [DONE]
+- make AND and OR short circuiting
+- add io.fatal (panic)
 - decide on the style rules of the language
 - add error value
 - organize the code better
