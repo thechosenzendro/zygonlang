@@ -92,6 +92,7 @@ const (
 	FALSE        = "FALSE"
 	DOT          = "DOT"
 	DEFAULT      = "DEFAULT"
+	REST         = "REST"
 )
 
 type Token struct {
@@ -154,8 +155,13 @@ func lexToken(source *Stream[rune]) []Token {
 
 		}
 	case *source.peek(0) == '.':
-		tokens = append(tokens, Token{DOT, "."})
-		source.consume(1)
+		if *source.peek(1) == '.' && *source.peek(2) == '.' {
+			tokens = append(tokens, Token{REST, "..."})
+			source.consume(3)
+		} else {
+			tokens = append(tokens, Token{DOT, "."})
+			source.consume(1)
+		}
 	case unicode.IsDigit(*source.peek(0)):
 		buf := []rune{}
 		hasDecimal := false
@@ -409,6 +415,7 @@ type FunctionDeclaration struct {
 		Name    Identifier
 		Default Expression
 	}
+	Rest *RestOperator
 	Body Block
 }
 
@@ -446,6 +453,12 @@ type AccessOperator struct {
 
 func (AccessOperator) Expr()  {}
 func (AccessOperator) Ident() {}
+
+type RestOperator struct {
+	Value Expression
+}
+
+func (RestOperator) Expr() {}
 
 type (
 	prefixParseFn func(*Stream[Token]) Expression
@@ -485,6 +498,17 @@ func parseGroupedExpression(tokens *Stream[Token]) Expression {
 	return expr
 }
 
+func parseRestOperator(tokens *Stream[Token]) Expression {
+	expr := RestOperator{}
+	if isToken(tokens, RBRACE, 1) || isToken(tokens, RPAREN, 1) || isToken(tokens, EOL, 1) {
+		return expr
+	}
+	tokens.consume(1)
+	expr.Value = parseExpression(tokens, LOWEST)
+	// ...tokens, ...{}, ...(get(x))
+	return expr
+}
+
 func Parse(tokens *Stream[Token]) Program {
 	program := Program{Body: []Node{}}
 	prefixParseFns[IDENT] = parseIdentifier
@@ -497,6 +521,7 @@ func Parse(tokens *Stream[Token]) Program {
 	prefixParseFns[CASE] = parseCaseExpression
 	prefixParseFns[TEXT_START] = parseTextLiteral
 	prefixParseFns[LBRACE] = parseTableLiteral
+	prefixParseFns[REST] = parseRestOperator
 
 	infixParseFns[PLUS] = parseInfixExpression
 	infixParseFns[MINUS] = parseInfixExpression
@@ -610,6 +635,10 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 				}
 				expr.Parameters = append(expr.Parameters, parameter)
 			} else if isToken(tokens, COMMA, 0) {
+				tokens.consume(1)
+			} else if isToken(tokens, REST, 0) {
+				rest := parseRestOperator(tokens).(RestOperator)
+				expr.Rest = &rest
 				tokens.consume(1)
 			}
 		}
@@ -1103,7 +1132,8 @@ type Function struct {
 		Default Value
 	}
 	Body Block
-	env  *Environment
+	Rest *RestOperator
+	Env  *Environment
 }
 
 func (f Function) Type() string    { return FUNCTION }
@@ -1404,17 +1434,17 @@ func Eval(_node Node, env *Environment) Value {
 			}
 
 		}
-		fn := Function{parameters, node.Body, env}
+		fn := Function{Parameters: parameters, Body: node.Body, Rest: node.Rest, Env: env}
 		if node.Name != nil {
-			env.Set(node.Name.Value, Function{parameters, node.Body, env})
+			env.Set(node.Name.Value, fn)
 		}
 		return fn
 	case FunctionCall:
 		fn := Eval(node.Fn, env)
 		switch function := fn.(type) {
 		case Function:
-			funcEnviron := &Environment{Store: make(map[string]Value), Outer: function.env}
-
+			funcEnviron := &Environment{Store: make(map[string]Value), Outer: function.Env}
+			y := 0
 			for i, param := range function.Parameters {
 				if len(node.Arguments) > i {
 					arg := node.Arguments[i]
@@ -1434,6 +1464,20 @@ func Eval(_node Node, env *Environment) Value {
 					}
 					funcEnviron.Set(name.Value, value)
 				}
+				y = i
+			}
+			if function.Rest != nil && len(function.Parameters) < len(node.Arguments) {
+				rest := Table{Entries: map[Value]Value{}}
+				ind := 0
+				for _, arg := range node.Arguments[y:] {
+					if arg.Name != nil {
+						rest.Entries[TableKey(*arg.Name)] = Eval(arg.Value, env)
+					} else {
+						rest.Entries[Number{float64(ind)}] = Eval(arg.Value, env)
+						ind += 1
+					}
+				}
+				funcEnviron.Set(function.Rest.Value.(Identifier).Value, rest)
 			}
 			return Eval(function.Body, funcEnviron)
 
@@ -1513,6 +1557,8 @@ func Eval(_node Node, env *Environment) Value {
 
 			}
 		}
+	case RestOperator:
+		panic("rest operator is not a normal expression and cant be used on its own. ")
 	default:
 		panic(fmt.Sprintf("eval error %T", node))
 	}

@@ -25,7 +25,15 @@ if its not, then it will bind the value of name: to it.
 if the names constant is defined, then it checks if names is a table, if it is, it compares it. if not it panics.
 if it isnt, it assigns rest of table to names.
 
-- add ... operator
+- add ... operator (the rest operator)
+normally, it should do nothing.
+
+in a function declaration, it means "put rest of the arguments in this table"
+in a function call, it means "put all of the table entries as arguments to this function"
+in a table literal, it means "add entries from this other table to this one"
+also can be used in table literal as a "rest" matcher
+
+
 - add variadic arguments
 - named arguments support for builtin functions
 - proper errors
