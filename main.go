@@ -1260,9 +1260,9 @@ func Eval(_node Node, env *Environment) Value {
 	case InfixExpression:
 		switch node.Operator {
 		case IS:
-			return Boolean{Eval(node.Left, env) == Eval(node.Right, env)}
+			return Boolean{reflect.DeepEqual(Eval(node.Left, env), Eval(node.Right, env))}
 		case IS_NOT:
-			return Boolean{Eval(node.Left, env) != Eval(node.Right, env)}
+			return Boolean{!reflect.DeepEqual(Eval(node.Left, env), Eval(node.Right, env))}
 		case AND:
 			return Boolean{Eval(node.Left, env).(Boolean).Value && Eval(node.Right, env).(Boolean).Value}
 		case OR:
