@@ -25,7 +25,7 @@ fib(n):
         n < 0:  Program.crash("Incorrect number {n}")
         n is 0: 0
         n is 1 or n is 2: 1
-        true: fib(n-1) + fib(n-2)
+        default: fib(n-1) + fib(n-2)
 
 fib(9) # Returns 34
 ```

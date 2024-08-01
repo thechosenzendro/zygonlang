@@ -1,5 +1,0 @@
-name: "Frank"
-
-case name:
-    "Joe": true
-    default: false
