@@ -11,7 +11,7 @@ table.x
 
 case:
 	1 is 1: IO.log("Yippeee")
-	2 is not 3: error("bruh")
+	2 is not 3: Errors.error("bruh")
 
 1 + 1
 1 - 1
