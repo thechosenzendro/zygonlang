@@ -411,12 +411,9 @@ func (InfixExpression) Expr() {}
 
 type FunctionDeclaration struct {
 	Name       *Identifier
-	Parameters []struct {
-		Name    Identifier
-		Default Expression
-	}
-	Rest *RestOperator
-	Body Block
+	Parameters map[Identifier]Expression
+	Rest       *RestOperator
+	Body       Block
 }
 
 func (FunctionDeclaration) Expr() {}
@@ -1448,14 +1445,31 @@ func Eval(_node Node, env *Environment) Value {
 			for i, param := range function.Parameters {
 				if len(node.Arguments) > i {
 					arg := node.Arguments[i]
-					if arg.Name == nil {
-						arg.Name = &param.Name
+					switch value := arg.Value.(type) {
+					case RestOperator:
+						_rest := Eval(value.Value, env)
+						if _rest.Type() != TABLE {
+							panic(fmt.Sprintf("cannot spread %T", _rest))
+						}
+						rest := _rest.(Table)
+						for key, value := range rest.Entries {
+							if key != nil {
+								funcEnviron.Set(key.(TableKey).Value, value)
+							} else {
+								panic("Cannot spread items without names")
+							}
+						}
+					default:
+						if arg.Name == nil {
+							arg.Name = &param.Name
+						}
+						var val Value = Eval(arg.Value, env)
+						if arg.Value == nil {
+							val = function.Parameters[i].Default
+						}
+						funcEnviron.Set(arg.Name.Value, val)
+
 					}
-					var value Value = Eval(arg.Value, env)
-					if arg.Value == nil {
-						value = function.Parameters[i].Default
-					}
-					funcEnviron.Set(arg.Name.Value, value)
 				} else {
 					name := &param.Name
 					value := function.Parameters[i].Default
@@ -1470,11 +1484,27 @@ func Eval(_node Node, env *Environment) Value {
 				rest := Table{Entries: map[Value]Value{}}
 				ind := 0
 				for _, arg := range node.Arguments[y:] {
-					if arg.Name != nil {
-						rest.Entries[TableKey(*arg.Name)] = Eval(arg.Value, env)
-					} else {
-						rest.Entries[Number{float64(ind)}] = Eval(arg.Value, env)
-						ind += 1
+					switch value := arg.Value.(type) {
+					case RestOperator:
+						_rest := Eval(value.Value, env)
+						if _rest.Type() != TABLE {
+							panic(fmt.Sprintf("cannot spread %T", _rest))
+						}
+						rest := _rest.(Table)
+						for key, value := range rest.Entries {
+							if key != nil {
+								funcEnviron.Set(key.(TableKey).Value, value)
+							} else {
+								panic("Cannot spread items without names")
+							}
+						}
+					default:
+						if arg.Name != nil {
+							rest.Entries[TableKey(*arg.Name)] = Eval(arg.Value, env)
+						} else {
+							rest.Entries[Number{float64(ind)}] = Eval(arg.Value, env)
+							ind += 1
+						}
 					}
 				}
 				funcEnviron.Set(function.Rest.Value.(Identifier).Value, rest)
