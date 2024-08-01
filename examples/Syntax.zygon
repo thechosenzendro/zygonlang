@@ -33,6 +33,6 @@ serve(_)
 
 # Comments
 
-pub x
+pub pi: 3.14
 
 using X, Y.(a, b)
