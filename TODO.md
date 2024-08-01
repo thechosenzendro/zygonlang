@@ -11,6 +11,20 @@
 - organize the code better
 - add a default keyword for case [DONE]
 - pattern matching with tables
+
+{1} - Matches a table with one entry (O: 1)
+{name: "frank"} - Matches a table with named entry (name: "frank")
+
+{name: name}
+if the name constant is defined, then it changes name to the value of name.
+if its not, then it will bind the value of name: to it.
+
+{1, ...} - Matches a table with one entry (0: 1) and variable number of other entries. if there is only one entry, panics.
+
+{1, ...names}
+if the names constant is defined, then it checks if names is a table, if it is, it compares it. if not it panics.
+if it isnt, it assigns rest of table to names.
+
 - add ... operator
 - add variadic arguments
 - named arguments support for builtin functions
