@@ -606,7 +606,7 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		}
 	}
 	if isDeclaration {
-		expr := FunctionDeclaration{}
+		expr := FunctionDeclaration{Parameters: map[Identifier]Expression{}}
 		if fn != nil {
 			switch fn := fn.(type) {
 			case Identifier:
@@ -619,18 +619,15 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		tokens.consume(1)
 		for !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
 			if isToken(tokens, IDENT, 0) {
-				parameter := struct {
-					Name    Identifier
-					Default Expression
-				}{}
-				parameter.Name = parseIdentifier(tokens).(Identifier)
+				name := parseIdentifier(tokens).(Identifier)
+				var param_default Expression = nil
 				tokens.consume(1)
 				if isToken(tokens, COLON, 0) {
 					tokens.consume(1)
-					parameter.Default = parseExpression(tokens, LOWEST)
+					param_default = parseExpression(tokens, LOWEST)
 					tokens.consume(1)
 				}
-				expr.Parameters = append(expr.Parameters, parameter)
+				expr.Parameters[name] = param_default
 			} else if isToken(tokens, COMMA, 0) {
 				tokens.consume(1)
 			} else if isToken(tokens, REST, 0) {
@@ -1124,13 +1121,10 @@ func (t Text) Type() string    { return TEXT }
 func (t Text) Inspect() string { return t.Value }
 
 type Function struct {
-	Parameters []struct {
-		Name    Identifier
-		Default Value
-	}
-	Body Block
-	Rest *RestOperator
-	Env  *Environment
+	Parameters map[Identifier]Value
+	Body       Block
+	Rest       *RestOperator
+	Env        *Environment
 }
 
 func (f Function) Type() string    { return FUNCTION }
@@ -1407,31 +1401,16 @@ func Eval(_node Node, env *Environment) Value {
 		}
 		return val
 	case FunctionDeclaration:
-		parameters := []struct {
-			Name    Identifier
-			Default Value
-		}{}
-		for _, param := range node.Parameters {
-			if param.Default == nil {
-				parameters = append(parameters, struct {
-					Name    Identifier
-					Default Value
-				}{
-					Name:    param.Name,
-					Default: nil,
-				})
+		fn := Function{Parameters: map[Identifier]Value{}, Body: node.Body, Rest: node.Rest, Env: env}
+
+		for name, param_default := range node.Parameters {
+			if param_default == nil {
+				fn.Parameters[name] = nil
 			} else {
-				parameters = append(parameters, struct {
-					Name    Identifier
-					Default Value
-				}{
-					Name:    param.Name,
-					Default: Eval(param.Default, env),
-				})
+				fn.Parameters[name] = Eval(param_default, env)
 			}
 
 		}
-		fn := Function{Parameters: parameters, Body: node.Body, Rest: node.Rest, Env: env}
 		if node.Name != nil {
 			env.Set(node.Name.Value, fn)
 		}
@@ -1441,8 +1420,8 @@ func Eval(_node Node, env *Environment) Value {
 		switch function := fn.(type) {
 		case Function:
 			funcEnviron := &Environment{Store: make(map[string]Value), Outer: function.Env}
-			y := 0
-			for i, param := range function.Parameters {
+			i := 0
+			for name, param_default := range function.Parameters {
 				if len(node.Arguments) > i {
 					arg := node.Arguments[i]
 					switch value := arg.Value.(type) {
@@ -1461,29 +1440,29 @@ func Eval(_node Node, env *Environment) Value {
 						}
 					default:
 						if arg.Name == nil {
-							arg.Name = &param.Name
+							arg.Name = &name
 						}
 						var val Value = Eval(arg.Value, env)
 						if arg.Value == nil {
-							val = function.Parameters[i].Default
+							val = param_default
 						}
 						funcEnviron.Set(arg.Name.Value, val)
 
 					}
 				} else {
-					name := &param.Name
-					value := function.Parameters[i].Default
+					name := &name
+					value := param_default
 					if value == nil {
-						panic(fmt.Sprintf("no default for %s", function.Parameters[i].Name))
+						panic(fmt.Sprintf("no default for %s", name))
 					}
 					funcEnviron.Set(name.Value, value)
 				}
-				y = i
+				i += 1
 			}
 			if function.Rest != nil && len(function.Parameters) < len(node.Arguments) {
 				rest := Table{Entries: map[Value]Value{}}
 				ind := 0
-				for _, arg := range node.Arguments[y:] {
+				for _, arg := range node.Arguments[i:] {
 					switch value := arg.Value.(type) {
 					case RestOperator:
 						_rest := Eval(value.Value, env)
