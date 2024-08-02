@@ -589,6 +589,8 @@ func resolveLParen(tokens *Stream[Token]) Expression {
 	}
 }
 
+var parsingCase = false
+
 func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 	isDeclaration := false
 	if fn == nil {
@@ -601,7 +603,7 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 			i += 1
 		}
 		i += 1
-		if isToken(tokens, COLON, i) {
+		if isToken(tokens, COLON, i) && !parsingCase {
 			isDeclaration = true
 		}
 	}
@@ -681,7 +683,6 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		return expr
 	}
 }
-
 func parseAssignmentStatement(tokens *Stream[Token]) Statement {
 	stmt := AssignmentStatement{}
 	stmt.Name = parseIdentifier(tokens).(Identifier)
@@ -814,6 +815,7 @@ func parseTableLiteral(tokens *Stream[Token]) Expression {
 
 func parseCaseExpression(tokens *Stream[Token]) Expression {
 	expr := CaseExpression{}
+	parsingCase = true
 	tokens.consume(1)
 	if !isToken(tokens, COLON, 0) {
 		expr.Subject = parseExpression(tokens, LOWEST)
@@ -872,6 +874,7 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 			}{pattern, block})
 		}
 	}
+	parsingCase = false
 	return expr
 }
 

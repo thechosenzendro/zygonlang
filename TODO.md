@@ -9,6 +9,8 @@
 - decide on the style rules of the language [DONE]
 - add error value [DONE]
 - organize the code better
+- allow use of user defined modules (search first at project root than lib root)
+- fix calling functions in case patterns [DONE]
 - add a default keyword for case [DONE]
 - pattern matching with tables
 

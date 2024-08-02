@@ -1,3 +1,6 @@
-using Deeply.Nested.Module
+using IO
 
-Module.one
+truthy(): true
+
+case true:
+    truthy(): IO.log("Yipee")
