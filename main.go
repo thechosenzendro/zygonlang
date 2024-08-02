@@ -1510,8 +1510,26 @@ func Eval(_node Node, env *Environment) Value {
 		index := -1
 		for _, entry := range node.Entries {
 			if entry.Key == nil {
-				index += 1
-				entries[Number{float64(index)}] = Eval(entry.Value, env)
+				switch val := entry.Value.(type) {
+				case RestOperator:
+					_table := Eval(val.Value, env)
+					if _table.Type() != TABLE {
+						panic("cannot spread non table values")
+					}
+					table := _table.(Table)
+					for key, value := range table.Entries {
+						switch key := key.(type) {
+						case TableKey:
+							entries[key] = value
+						case Number:
+							index += 1
+							entries[Number{float64(index)}] = value
+						}
+					}
+				default:
+					index += 1
+					entries[Number{float64(index)}] = Eval(entry.Value, env)
+				}
 			} else {
 				entries[TableKey{entry.Key.Value}] = Eval(entry.Value, env)
 			}
