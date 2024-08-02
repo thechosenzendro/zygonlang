@@ -1,0 +1,3 @@
+using Types.(type)
+
+type("Hello World") is Types.number

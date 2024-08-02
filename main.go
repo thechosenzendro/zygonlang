@@ -1006,7 +1006,7 @@ const (
 var stdlib = map[Ident]Table{
 	Identifier{"IO"}: {
 		Entries: map[Value]Value{
-			TableKey{"log"}: Builtin{
+			TableKey{"log"}: BuiltinFunction{
 				Fn: func(args map[string]Value) Value {
 					fmt.Print(args["message"].Inspect() + "\n")
 					return nil
@@ -1021,7 +1021,7 @@ var stdlib = map[Ident]Table{
 					Rest: nil,
 				},
 			},
-			TableKey{"get"}: Builtin{
+			TableKey{"get"}: BuiltinFunction{
 				Fn: func(args map[string]Value) Value {
 					prompt := args["prompt"].Inspect()
 					fmt.Print(prompt)
@@ -1046,7 +1046,7 @@ var stdlib = map[Ident]Table{
 	},
 	Identifier{"Table"}: {
 		Entries: map[Value]Value{
-			TableKey{"change"}: Builtin{
+			TableKey{"change"}: BuiltinFunction{
 				Fn: func(args map[string]Value) Value {
 					table := args["to_change"]
 					switch table := table.(type) {
@@ -1087,7 +1087,7 @@ var stdlib = map[Ident]Table{
 	},
 	Identifier{"Program"}: {
 		Entries: map[Value]Value{
-			TableKey{"crash"}: Builtin{
+			TableKey{"crash"}: BuiltinFunction{
 				Fn: func(args map[string]Value) Value {
 					fmt.Printf("Crash: %s\n", args["reason"].Inspect())
 					os.Exit(1)
@@ -1106,7 +1106,7 @@ var stdlib = map[Ident]Table{
 	},
 	Identifier{"Errors"}: {
 		Entries: map[Value]Value{
-			TableKey{"error"}: Builtin{
+			TableKey{"error"}: BuiltinFunction{
 				Fn: func(args map[string]Value) Value {
 					message := args["message"]
 					if message.Type() != TEXT {
@@ -1124,6 +1124,47 @@ var stdlib = map[Ident]Table{
 					Rest: nil,
 				},
 			}},
+	},
+	Identifier{"Types"}: {
+		Entries: map[Value]Value{
+			TableKey{"number"}:   TableKey{NUMBER},
+			TableKey{"boolean"}:  TableKey{BOOL},
+			TableKey{"text"}:     TableKey{TEXT},
+			TableKey{"function"}: TableKey{FUNCTION},
+			TableKey{"table"}:    TableKey{TABLE},
+			TableKey{"error"}:    TableKey{ERROR},
+			TableKey{"type"}: BuiltinFunction{
+				Fn: func(args map[string]Value) Value {
+					switch args["value"].(type) {
+					case Number:
+						return TableKey{NUMBER}
+					case Boolean:
+						return TableKey{BOOL}
+					case Text:
+						return TableKey{TEXT}
+					case Function:
+						return TableKey{FUNCTION}
+					case BuiltinFunction:
+						return TableKey{FUNCTION}
+					case Table:
+						return TableKey{TABLE}
+					case Error:
+						return TableKey{ERROR}
+					default:
+						return Error{"unknown type"}
+					}
+				},
+				Contract: struct {
+					Parameters map[TableKey]Value
+					Rest       *RestOperator
+				}{
+					Parameters: map[TableKey]Value{
+						{"value"}: nil,
+					},
+					Rest: nil,
+				},
+			},
+		},
 	},
 }
 
@@ -1215,7 +1256,7 @@ type TableKey struct {
 func (tk TableKey) Type() string    { return TABLE_KEY }
 func (tk TableKey) Inspect() string { return tk.Value }
 
-type Builtin struct {
+type BuiltinFunction struct {
 	Fn       func(args map[string]Value) Value
 	Contract struct {
 		Parameters map[TableKey]Value
@@ -1223,8 +1264,8 @@ type Builtin struct {
 	}
 }
 
-func (b Builtin) Type() string    { return BUILTIN }
-func (b Builtin) Inspect() string { return "Builtin" }
+func (b BuiltinFunction) Type() string    { return BUILTIN }
+func (b BuiltinFunction) Inspect() string { return "Builtin" }
 
 type Error struct {
 	Value string
@@ -1528,7 +1569,7 @@ func Eval(_node Node, env *Environment) Value {
 			}
 			return Eval(function.Body, funcEnviron)
 
-		case Builtin:
+		case BuiltinFunction:
 			i := 0
 			funcEnviron := map[string]Value{}
 			for name, param_default := range function.Contract.Parameters {
