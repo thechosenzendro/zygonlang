@@ -1700,12 +1700,7 @@ func Eval(_node Node, env *Environment) Value {
 		for _, module := range node.Modules {
 
 			if builtin, ok := stdlib[module.Module]; ok {
-				switch m := module.Module.(type) {
-				case Identifier:
-					env.Set(m.Value, builtin)
-				case AccessOperator:
-					env.Set(m.Subject.(Identifier).Value, unwrap(m.Attribute.(Ident), builtin))
-				}
+				unwrap(module.Module, builtin, env)
 				for _, symbol := range module.Symbols {
 					env.Set(symbol.Value, builtin.Entries[TableKey(symbol)])
 				}
@@ -1719,16 +1714,7 @@ func Eval(_node Node, env *Environment) Value {
 				}
 				_, e := Exec(string(source))
 				pubTable := publicToTable(e)
-				switch m := module.Module.(type) {
-				case Identifier:
-					env.Set(m.Value, pubTable)
-				case AccessOperator:
-					env.Set(m.Subject.(Identifier).Value, unwrap(m.Attribute.(Ident), pubTable))
-				}
-				fmt.Print("Env: \n\n\n")
-				for key := range pubTable.Entries {
-					fmt.Println(key.Inspect())
-				}
+				unwrap(module.Module, pubTable, env)
 				for _, symbol := range module.Symbols {
 					if val, ok := e.Get("pub " + symbol.Value); ok {
 						env.Set(symbol.Value, val)
@@ -1755,14 +1741,13 @@ func publicToTable(e *Environment) Table {
 	return table
 }
 
-func unwrap(m Ident, toPut Value) Value {
+func unwrap(m Ident, toPut Table, env *Environment) {
 	switch m := m.(type) {
 	case AccessOperator:
-		return Table{Entries: map[Value]Value{TableKey{m.Subject.(Identifier).Value}: unwrap(m.Attribute.(Ident), toPut)}}
+		unwrap(m.Attribute.(Ident), toPut, env)
 	case Identifier:
-		return Table{Entries: map[Value]Value{TableKey(m): toPut}}
+		env.Set(m.Value, toPut)
 	}
-	panic("unwrap error")
 }
 
 func getModPath(module Ident) string {

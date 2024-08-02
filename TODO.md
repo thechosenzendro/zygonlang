@@ -37,7 +37,8 @@ also can be used in table literal as a "rest" matcher
 - add variadic arguments [DONE]
 - named arguments support for builtin functions [DONE]
 - add contracts to builtin functions [DONE]
-- add builtin values
+- add builtin values [DONE]
+- using should set the last identifier in path instead of the first [DONE]
 - proper errors
 - add some way of documentation
 
