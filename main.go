@@ -14,7 +14,12 @@ import (
 	"github.com/tiendc/go-deepcopy"
 )
 
+var projectRoot string
+
 func main() {
+	path := "./examples/Main.zygon"
+	_base := strings.Split(path, "/")
+	projectRoot = strings.Join(_base[:len(_base)-1], "/") + "/"
 	sourceCode, err := os.ReadFile("./examples/Main.zygon")
 	if err != nil {
 		panic(err)
@@ -1699,7 +1704,8 @@ func Eval(_node Node, env *Environment) Value {
 			panic("error in pub statement")
 		}
 	case UsingStatement:
-		rootModulePath := "./lib"
+		libRoot := "./lib"
+
 		for _, module := range node.Modules {
 
 			if builtin, ok := stdlib[module.Module]; ok {
@@ -1709,13 +1715,15 @@ func Eval(_node Node, env *Environment) Value {
 				}
 
 			} else {
-
-				modulePath := rootModulePath + getModPath(module.Module)
-				source, err := os.ReadFile(modulePath)
+				var e *Environment
+				var err error
+				_, e, err = getModule(projectRoot + getModPath(module.Module))
 				if err != nil {
-					panic(fmt.Sprintf("no module at %s", modulePath))
+					_, e, err = getModule(libRoot + getModPath(module.Module))
+					if err != nil {
+						panic(err)
+					}
 				}
-				_, e := Exec(string(source))
 				pubTable := publicToTable(e)
 				unwrap(module.Module, pubTable, env)
 				for _, symbol := range module.Symbols {
@@ -1732,6 +1740,16 @@ func Eval(_node Node, env *Environment) Value {
 		panic(fmt.Sprintf("eval error %T", node))
 	}
 	return nil
+}
+
+func getModule(modulePath string) (Value, *Environment, error) {
+	source, err := os.ReadFile(modulePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("no module at %s", modulePath)
+	}
+	m, e := Exec(string(source))
+	return m, e, nil
+
 }
 
 func publicToTable(e *Environment) Table {

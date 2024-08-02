@@ -9,10 +9,11 @@
 - decide on the style rules of the language [DONE]
 - add error value [DONE]
 - organize the code better
-- allow use of user defined modules (search first at project root than lib root)
+- allow use of user defined modules (search first at project root than lib root) [DONE]
 - fix calling functions in case patterns [DONE]
 - add a default keyword for case [DONE]
 - pattern matching with tables
+- a file can import itself, and there can be an import loop - resolve
 
 {1} - Matches a table with one entry (O: 1)
 {name: "frank"} - Matches a table with named entry (name: "frank")

@@ -1,6 +1,3 @@
-using IO
+using Utils
 
-truthy(): true
-
-case true:
-    truthy(): IO.log("Yipee")
+Utils.one

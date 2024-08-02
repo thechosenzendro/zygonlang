@@ -4,4 +4,4 @@ go 1.22.5
 
 require github.com/davecgh/go-spew v1.1.1
 
-require github.com/tiendc/go-deepcopy v0.5.1 // indirect
+require github.com/tiendc/go-deepcopy v0.5.1
