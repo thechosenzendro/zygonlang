@@ -35,7 +35,9 @@ also can be used in table literal as a "rest" matcher
 
 
 - add variadic arguments [DONE]
-- named arguments support for builtin functions
+- named arguments support for builtin functions [DONE]
+- add contracts to builtin functions [DONE]
+- add builtin values
 - proper errors
 - add some way of documentation
 

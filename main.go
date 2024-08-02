@@ -1007,31 +1007,39 @@ var stdlib = map[Ident]Table{
 	Identifier{"IO"}: {
 		Entries: map[Value]Value{
 			TableKey{"log"}: Builtin{
-				Fn: func(args ...Value) Value {
-					var out bytes.Buffer
-					if len(args) != 1 {
-						panic("supply only one argument to io.log")
-					}
-					out.WriteString(args[0].Inspect())
-					out.WriteString("\n")
-					fmt.Print(out.String())
+				Fn: func(args map[string]Value) Value {
+					fmt.Print(args["message"].Inspect() + "\n")
 					return nil
+				},
+				Contract: struct {
+					Parameters map[TableKey]Value
+					Rest       *RestOperator
+				}{
+					Parameters: map[TableKey]Value{
+						{"message"}: nil,
+					},
+					Rest: nil,
 				},
 			},
 			TableKey{"get"}: Builtin{
-				Fn: func(args ...Value) Value {
-					if len(args) == 1 {
-						prompt := args[0].Inspect()
-						fmt.Print(prompt)
-						var input string
-						scanner := bufio.NewScanner(os.Stdin)
-						if scanner.Scan() {
-							input = scanner.Text()
-						}
-						return Text{input}
-					} else {
-						panic("supply prompt to io.get")
+				Fn: func(args map[string]Value) Value {
+					prompt := args["prompt"].Inspect()
+					fmt.Print(prompt)
+					var input string
+					scanner := bufio.NewScanner(os.Stdin)
+					if scanner.Scan() {
+						input = scanner.Text()
 					}
+					return Text{input}
+				},
+				Contract: struct {
+					Parameters map[TableKey]Value
+					Rest       *RestOperator
+				}{
+					Parameters: map[TableKey]Value{
+						{"prompt"}: nil,
+					},
+					Rest: nil,
 				},
 			},
 		},
@@ -1039,11 +1047,8 @@ var stdlib = map[Ident]Table{
 	Identifier{"Table"}: {
 		Entries: map[Value]Value{
 			TableKey{"change"}: Builtin{
-				Fn: func(args ...Value) Value {
-					if len(args) != 2 {
-						panic("supply the table to change and table that contains the changes for table.change")
-					}
-					table := args[0]
+				Fn: func(args map[string]Value) Value {
+					table := args["to_change"]
 					switch table := table.(type) {
 					case Table:
 					default:
@@ -1051,7 +1056,7 @@ var stdlib = map[Ident]Table{
 					}
 					var newTable Table
 					deepcopy.Copy(&newTable, table)
-					changes := args[1]
+					changes := args["changes"]
 
 					switch changes := changes.(type) {
 					case Table:
@@ -1067,33 +1072,56 @@ var stdlib = map[Ident]Table{
 
 					return newTable
 				},
+				Contract: struct {
+					Parameters map[TableKey]Value
+					Rest       *RestOperator
+				}{
+					Parameters: map[TableKey]Value{
+						{"to_change"}: nil,
+						{"changes"}:   nil,
+					},
+					Rest: nil,
+				},
 			},
 		},
 	},
 	Identifier{"Program"}: {
 		Entries: map[Value]Value{
 			TableKey{"crash"}: Builtin{
-				Fn: func(args ...Value) Value {
-					if len(args) != 1 {
-						panic("supply only one argument to io.log")
-					}
-					fmt.Printf("Crash: %s\n", args[0].Inspect())
-					os.Exit(0)
+				Fn: func(args map[string]Value) Value {
+					fmt.Printf("Crash: %s\n", args["reason"].Inspect())
+					os.Exit(1)
 					return nil
+				},
+				Contract: struct {
+					Parameters map[TableKey]Value
+					Rest       *RestOperator
+				}{
+					Parameters: map[TableKey]Value{
+						{"reason"}: nil,
+					},
+					Rest: nil,
 				},
 			}},
 	},
 	Identifier{"Errors"}: {
 		Entries: map[Value]Value{
 			TableKey{"error"}: Builtin{
-				Fn: func(args ...Value) Value {
-					if len(args) != 1 {
-						panic("supply only one argument to Errors.error")
-					}
-					if args[0].Type() != TEXT {
+				Fn: func(args map[string]Value) Value {
+					message := args["message"]
+					if message.Type() != TEXT {
 						panic("you need to supply text to Errors.error")
 					}
-					return Error{args[0].(Text).Value}
+					return Error{message.(Text).Value}
+				},
+				Contract: struct {
+					Parameters map[TableKey]Value
+					Rest       *RestOperator
+				}{
+					Parameters: map[TableKey]Value{
+						{"message"}: nil,
+					},
+					Rest: nil,
 				},
 			}},
 	},
@@ -1187,14 +1215,16 @@ type TableKey struct {
 func (tk TableKey) Type() string    { return TABLE_KEY }
 func (tk TableKey) Inspect() string { return tk.Value }
 
-type BuiltinFunction func(args ...Value) Value
-
 type Builtin struct {
-	Fn BuiltinFunction
+	Fn       func(args map[string]Value) Value
+	Contract struct {
+		Parameters map[TableKey]Value
+		Rest       *RestOperator
+	}
 }
 
 func (b Builtin) Type() string    { return BUILTIN }
-func (b Builtin) Inspect() string { return "Builtin Function" }
+func (b Builtin) Inspect() string { return "Builtin" }
 
 type Error struct {
 	Value string
@@ -1499,11 +1529,85 @@ func Eval(_node Node, env *Environment) Value {
 			return Eval(function.Body, funcEnviron)
 
 		case Builtin:
-			arguments := []Value{}
-			for _, argument := range node.Arguments {
-				arguments = append(arguments, Eval(argument.Value, env))
+			i := 0
+			funcEnviron := map[string]Value{}
+			for name, param_default := range function.Contract.Parameters {
+				if len(node.Arguments) > i {
+					arg := node.Arguments[i]
+					switch value := arg.Value.(type) {
+					case RestOperator:
+						_rest := Eval(value.Value, env)
+						if _rest.Type() != TABLE {
+							panic(fmt.Sprintf("cannot spread %T", _rest))
+						}
+						rest := _rest.(Table)
+						for key, value := range rest.Entries {
+							if key != nil {
+								if _, ok := function.Contract.Parameters[key.(TableKey)]; ok {
+									funcEnviron[key.(TableKey).Value] = value
+								} else {
+									panic(fmt.Sprintf("Cannot spread items with names that arent in the parameters (%s)", key.Inspect()))
+								}
+							} else {
+								panic("Cannot spread items without names")
+							}
+						}
+					default:
+						if arg.Name == nil {
+							arg.Name = &name
+						}
+						var val Value = Eval(arg.Value, env)
+						if arg.Value == nil {
+							val = param_default
+						}
+						funcEnviron[arg.Name.Value] = val
+
+					}
+				} else {
+					name := &name
+					value := param_default
+					if value == nil {
+						panic(fmt.Sprintf("no default for %s", name))
+					}
+					funcEnviron[name.Value] = value
+				}
+				i += 1
 			}
-			return function.Fn(arguments...)
+			if function.Contract.Rest != nil && len(function.Contract.Parameters) < len(node.Arguments) {
+				rest := Table{Entries: map[Value]Value{}}
+				ind := 0
+				for _, arg := range node.Arguments[i:] {
+					switch value := arg.Value.(type) {
+					case RestOperator:
+						_rest := Eval(value.Value, env)
+						if _rest.Type() != TABLE {
+							panic(fmt.Sprintf("cannot spread %T", _rest))
+						}
+						rest := _rest.(Table)
+						for key, value := range rest.Entries {
+							if key != nil {
+								if _, ok := function.Contract.Parameters[key.(TableKey)]; ok {
+									funcEnviron[key.(TableKey).Value] = value
+								} else {
+									panic("Cannot spread items with names that arent in the parameters")
+								}
+							} else {
+								panic("Cannot spread items without names")
+							}
+						}
+					default:
+						if arg.Name != nil {
+							rest.Entries[TableKey(*arg.Name)] = Eval(arg.Value, env)
+						} else {
+							rest.Entries[Number{float64(ind)}] = Eval(arg.Value, env)
+							ind += 1
+						}
+					}
+				}
+				funcEnviron[function.Contract.Rest.Value.(Identifier).Value] = rest
+			}
+			return function.Fn(funcEnviron)
+
 		}
 	case TableLiteral:
 		entries := map[Value]Value{}
