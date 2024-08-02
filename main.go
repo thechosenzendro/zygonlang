@@ -421,7 +421,7 @@ func (FunctionDeclaration) Expr() {}
 type FunctionCall struct {
 	Fn        Expression
 	Arguments []struct {
-		Name  *Identifier
+		Name  *TableKey
 		Value Expression
 	}
 }
@@ -652,13 +652,13 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		for !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
 			if isToken(tokens, IDENT, 0) {
 				argument := struct {
-					Name  *Identifier
+					Name  *TableKey
 					Value Expression
 				}{}
 				if isToken(tokens, COLON, 1) {
 					switch name := parseIdentifier(tokens).(type) {
 					case Identifier:
-						argument.Name = &name
+						argument.Name = &TableKey{name.Value}
 					}
 					tokens.consume(2)
 				}
@@ -669,7 +669,7 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 				tokens.consume(1)
 			} else {
 				argument := struct {
-					Name  *Identifier
+					Name  *TableKey
 					Value Expression
 				}{}
 				argument.Name = nil
@@ -1121,7 +1121,7 @@ func (t Text) Type() string    { return TEXT }
 func (t Text) Inspect() string { return t.Value }
 
 type Function struct {
-	Parameters map[Identifier]Value
+	Parameters map[TableKey]Value
 	Body       Block
 	Rest       *RestOperator
 	Env        *Environment
@@ -1401,13 +1401,13 @@ func Eval(_node Node, env *Environment) Value {
 		}
 		return val
 	case FunctionDeclaration:
-		fn := Function{Parameters: map[Identifier]Value{}, Body: node.Body, Rest: node.Rest, Env: env}
+		fn := Function{Parameters: map[TableKey]Value{}, Body: node.Body, Rest: node.Rest, Env: env}
 
 		for name, param_default := range node.Parameters {
 			if param_default == nil {
-				fn.Parameters[name] = nil
+				fn.Parameters[TableKey(name)] = nil
 			} else {
-				fn.Parameters[name] = Eval(param_default, env)
+				fn.Parameters[TableKey(name)] = Eval(param_default, env)
 			}
 
 		}
@@ -1433,7 +1433,11 @@ func Eval(_node Node, env *Environment) Value {
 						rest := _rest.(Table)
 						for key, value := range rest.Entries {
 							if key != nil {
-								funcEnviron.Set(key.(TableKey).Value, value)
+								if _, ok := function.Parameters[key.(TableKey)]; ok {
+									funcEnviron.Set(key.(TableKey).Value, value)
+								} else {
+									panic(fmt.Sprintf("Cannot spread items with names that arent in the parameters (%s)", key.Inspect()))
+								}
 							} else {
 								panic("Cannot spread items without names")
 							}
@@ -1472,7 +1476,11 @@ func Eval(_node Node, env *Environment) Value {
 						rest := _rest.(Table)
 						for key, value := range rest.Entries {
 							if key != nil {
-								funcEnviron.Set(key.(TableKey).Value, value)
+								if _, ok := function.Parameters[key.(TableKey)]; ok {
+									funcEnviron.Set(key.(TableKey).Value, value)
+								} else {
+									panic("Cannot spread items with names that arent in the parameters")
+								}
 							} else {
 								panic("Cannot spread items without names")
 							}
