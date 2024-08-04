@@ -11,12 +11,14 @@ import (
 	"unicode"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/elliotchance/orderedmap/v2"
 	"github.com/tiendc/go-deepcopy"
 )
 
 var projectRoot string
 
 func main() {
+	setupBuiltinLib()
 	path := "./examples/Main.zygon"
 	_base := strings.Split(path, "/")
 	projectRoot = strings.Join(_base[:len(_base)-1], "/") + "/"
@@ -416,7 +418,7 @@ func (InfixExpression) Expr() {}
 
 type FunctionDeclaration struct {
 	Name       *Identifier
-	Parameters map[Identifier]Expression
+	Parameters *orderedmap.OrderedMap[Identifier, Expression]
 	Rest       *RestOperator
 	Body       Block
 }
@@ -613,7 +615,7 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		}
 	}
 	if isDeclaration {
-		expr := FunctionDeclaration{Parameters: map[Identifier]Expression{}}
+		expr := FunctionDeclaration{Parameters: orderedmap.NewOrderedMap[Identifier, Expression]()}
 		if fn != nil {
 			switch fn := fn.(type) {
 			case Identifier:
@@ -634,7 +636,7 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 					param_default = parseExpression(tokens, LOWEST)
 					tokens.consume(1)
 				}
-				expr.Parameters[name] = param_default
+				expr.Parameters.Set(name, param_default)
 			} else if isToken(tokens, COMMA, 0) {
 				tokens.consume(1)
 			} else if isToken(tokens, REST, 0) {
@@ -1011,169 +1013,257 @@ const (
 	ERROR     = "Error"
 )
 
-var stdlib = map[Ident]Table{
-	Identifier{"IO"}: {
-		Entries: map[Value]Value{
-			TableKey{"log"}: BuiltinFunction{
-				Fn: func(args map[string]Value) Value {
-					fmt.Print(args["message"].Inspect() + "\n")
-					return nil
-				},
-				Contract: struct {
-					Parameters map[TableKey]Value
-					Rest       *RestOperator
-				}{
-					Parameters: map[TableKey]Value{
-						{"message"}: nil,
-					},
-					Rest: nil,
-				},
+type KV[K, V comparable] struct {
+	Key   K
+	Value V
+}
+
+func orderedMapFromArgs[K, V comparable](y []KV[K, V]) *orderedmap.OrderedMap[K, V] {
+	x := orderedmap.NewOrderedMap[K, V]()
+	for _, z := range y {
+		x.Set(z.Key, z.Value)
+	}
+	return x
+}
+
+var builtinLib = orderedmap.NewOrderedMap[Ident, *orderedmap.OrderedMap[Value, Value]]()
+
+func setupBuiltinLib() {
+	// IO module
+	ioModule := orderedmap.NewOrderedMap[Value, Value]()
+	// IO.log
+	ioModule.Set(
+		TableKey{"log"},
+		BuiltinFunction{
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"message"}, nil},
+				}),
+				Rest: nil,
 			},
-			TableKey{"get"}: BuiltinFunction{
-				Fn: func(args map[string]Value) Value {
-					prompt := args["prompt"].Inspect()
-					fmt.Print(prompt)
-					var input string
-					scanner := bufio.NewScanner(os.Stdin)
-					if scanner.Scan() {
-						input = scanner.Text()
-					}
-					return Text{input}
-				},
-				Contract: struct {
-					Parameters map[TableKey]Value
-					Rest       *RestOperator
-				}{
-					Parameters: map[TableKey]Value{
-						{"prompt"}: nil,
-					},
-					Rest: nil,
-				},
+
+			Fn: func(args map[string]Value) Value {
+				fmt.Print(args["message"].Inspect() + "\n")
+				return nil
 			},
-		},
-	},
-	Identifier{"Table"}: {
-		Entries: map[Value]Value{
-			TableKey{"change"}: BuiltinFunction{
-				Fn: func(args map[string]Value) Value {
-					table := args["to_change"]
-					switch table := table.(type) {
-					case Table:
-					default:
-						panic(fmt.Sprintf("first argument to table.change must be a Table, not a %T", table))
-					}
-					var newTable Table
-					deepcopy.Copy(&newTable, table)
-					changes := args["changes"]
-
-					switch changes := changes.(type) {
-					case Table:
-					default:
-						panic(fmt.Sprintf("second argument to table.change must be a Table, not a %T", changes))
-					}
-
-					checkedChanges := changes.(Table)
-
-					for key, value := range checkedChanges.Entries {
-						newTable.Entries[key] = value
-					}
-
-					return newTable
-				},
-				Contract: struct {
-					Parameters map[TableKey]Value
-					Rest       *RestOperator
-				}{
-					Parameters: map[TableKey]Value{
-						{"to_change"}: nil,
-						{"changes"}:   nil,
-					},
-					Rest: nil,
-				},
+		})
+	// IO.get
+	ioModule.Set(
+		TableKey{"get"},
+		BuiltinFunction{
+			Fn: func(args map[string]Value) Value {
+				prompt := args["prompt"].Inspect()
+				fmt.Print(prompt)
+				var input string
+				scanner := bufio.NewScanner(os.Stdin)
+				if scanner.Scan() {
+					input = scanner.Text()
+				}
+				return Text{input}
+			},
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"prompt"}, nil},
+				}),
+				Rest: nil,
 			},
 		},
-	},
-	Identifier{"Program"}: {
-		Entries: map[Value]Value{
-			TableKey{"crash"}: BuiltinFunction{
-				Fn: func(args map[string]Value) Value {
-					fmt.Printf("Crash: %s\n", args["reason"].Inspect())
-					os.Exit(1)
-					return nil
-				},
-				Contract: struct {
-					Parameters map[TableKey]Value
-					Rest       *RestOperator
-				}{
-					Parameters: map[TableKey]Value{
-						{"reason"}: nil,
-					},
-					Rest: nil,
-				},
-			}},
-	},
-	Identifier{"Errors"}: {
-		Entries: map[Value]Value{
-			TableKey{"error"}: BuiltinFunction{
-				Fn: func(args map[string]Value) Value {
-					message := args["message"]
-					if message.Type() != TEXT {
-						panic("you need to supply text to Errors.error")
-					}
-					return Error{message.(Text).Value}
-				},
-				Contract: struct {
-					Parameters map[TableKey]Value
-					Rest       *RestOperator
-				}{
-					Parameters: map[TableKey]Value{
-						{"message"}: nil,
-					},
-					Rest: nil,
-				},
-			}},
-	},
-	Identifier{"Types"}: {
-		Entries: map[Value]Value{
-			TableKey{"number"}:   TableKey{NUMBER},
-			TableKey{"boolean"}:  TableKey{BOOL},
-			TableKey{"text"}:     TableKey{TEXT},
-			TableKey{"function"}: TableKey{FUNCTION},
-			TableKey{"table"}:    TableKey{TABLE},
-			TableKey{"error"}:    TableKey{ERROR},
-			TableKey{"type"}: BuiltinFunction{
-				Fn: func(args map[string]Value) Value {
-					switch args["value"].(type) {
-					case Number:
-						return TableKey{NUMBER}
-					case Boolean:
-						return TableKey{BOOL}
-					case Text:
-						return TableKey{TEXT}
-					case Function:
-						return TableKey{FUNCTION}
-					case BuiltinFunction:
-						return TableKey{FUNCTION}
-					case Table:
-						return TableKey{TABLE}
-					case Error:
-						return TableKey{ERROR}
-					default:
-						return Error{"unknown type"}
-					}
-				},
-				Contract: struct {
-					Parameters map[TableKey]Value
-					Rest       *RestOperator
-				}{
-					Parameters: map[TableKey]Value{
-						{"value"}: nil,
-					},
-					Rest: nil,
-				},
+	)
+
+	// Table module
+	tableModule := orderedmap.NewOrderedMap[Value, Value]()
+	// Table.change
+	tableModule.Set(
+		TableKey{"change"},
+		BuiltinFunction{
+			Fn: func(args map[string]Value) Value {
+				table := args["table"]
+				switch table := table.(type) {
+				case Table:
+				default:
+					panic(fmt.Sprintf("first argument to table.change must be a Table, not a %T", table))
+				}
+				var newTable Table
+				deepcopy.Copy(&newTable, table)
+				changes := args["changes"]
+
+				switch changes := changes.(type) {
+				case Table:
+				default:
+					panic(fmt.Sprintf("second argument to table.change must be a Table, not a %T", changes))
+				}
+
+				checkedChanges := changes.(Table)
+
+				for _, key := range checkedChanges.Entries.Keys() {
+					value, _ := checkedChanges.Entries.Get(key)
+					newTable.Entries.Set(key, value)
+				}
+
+				return newTable
+			},
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"table"}, nil},
+					{TableKey{"changes"}, nil},
+				}),
+				Rest: nil,
 			},
 		},
-	},
+	)
+	// Table.delete
+	tableModule.Set(
+		TableKey{"delete"},
+		BuiltinFunction{
+			Fn: func(args map[string]Value) Value {
+				oldTable := args["table"].(Table)
+				newTable := Table{Entries: orderedmap.NewOrderedMap[Value, Value]()}
+				ind := 0
+				for _, key := range oldTable.Entries.Keys() {
+					value, _ := oldTable.Entries.Get(key)
+					if key == args["index"] {
+						continue
+					}
+					if key.Type() == NUMBER {
+						newTable.Entries.Set(Number{float64(ind)}, value)
+						ind += 1
+					} else {
+						newTable.Entries.Set(key, value)
+					}
+				}
+
+				return newTable
+			},
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"table"}, nil},
+					{TableKey{"index"}, nil},
+				}),
+				Rest: nil,
+			},
+		},
+	)
+
+	// Program module
+	programModule := orderedmap.NewOrderedMap[Value, Value]()
+	// Program.crash
+	programModule.Set(
+		TableKey{"crash"},
+		BuiltinFunction{
+			Fn: func(args map[string]Value) Value {
+				fmt.Printf("Crash: %s\n", args["reason"].Inspect())
+				os.Exit(1)
+				return nil
+			},
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"reason"}, nil},
+				}),
+				Rest: nil,
+			},
+		},
+	)
+
+	// Errors module
+	errorsModule := orderedmap.NewOrderedMap[Value, Value]()
+	// Errors.error
+	errorsModule.Set(
+		TableKey{"error"},
+		BuiltinFunction{
+			Fn: func(args map[string]Value) Value {
+				message := args["message"]
+				if message.Type() != TEXT {
+					panic("you need to supply text to Errors.error")
+				}
+				return Error{message.(Text).Value}
+			},
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"message"}, nil},
+				}),
+				Rest: nil,
+			},
+		},
+	)
+
+	// Types module
+	typesModule := orderedmap.NewOrderedMap[Value, Value]()
+	// Types.number
+	typesModule.Set(TableKey{"number"}, TableKey{NUMBER})
+	// Types.boolean
+	typesModule.Set(TableKey{"boolean"}, TableKey{BOOL})
+	// Types.text
+	typesModule.Set(TableKey{"text"}, TableKey{TEXT})
+	// Types.function
+	typesModule.Set(TableKey{"function"}, TableKey{FUNCTION})
+	// Types.table
+	typesModule.Set(TableKey{"table"}, TableKey{TABLE})
+	// Types.error
+	typesModule.Set(TableKey{"error"}, TableKey{ERROR})
+	// Types.type
+	typesModule.Set(
+		TableKey{"type"},
+		BuiltinFunction{
+			Fn: func(args map[string]Value) Value {
+				switch args["value"].(type) {
+				case Number:
+					return TableKey{NUMBER}
+				case Boolean:
+					return TableKey{BOOL}
+				case Text:
+					return TableKey{TEXT}
+				case Function:
+					return TableKey{FUNCTION}
+				case BuiltinFunction:
+					return TableKey{FUNCTION}
+				case Table:
+					return TableKey{TABLE}
+				case Error:
+					return TableKey{ERROR}
+				default:
+					return Error{"unknown type"}
+				}
+			},
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"value"}, nil},
+				}),
+				Rest: nil,
+			},
+		},
+	)
+
+	// Text module
+	textModule := orderedmap.NewOrderedMap[Value, Value]()
+	// Text.split
+	textModule.Set(
+		TableKey{"split"},
+		BuiltinFunction{
+			Fn: func(args map[string]Value) Value {
+				tbl := Table{Entries: orderedmap.NewOrderedMap[Value, Value]()}
+				split := strings.Split(args["text"].(Text).Value, args["separator"].(Text).Value)
+				for i, s := range split {
+					tbl.Entries.Set(Number{float64(i)}, Text{s})
+				}
+				fmt.Println("text split", tbl.Inspect())
+				return tbl
+			},
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"text"}, nil},
+					{TableKey{"separator"}, nil},
+				}),
+				Rest: nil,
+			},
+		},
+	)
+
+	builtinLib.Set(Identifier{"IO"}, ioModule)
+	builtinLib.Set(Identifier{"Table"}, tableModule)
+	builtinLib.Set(Identifier{"Program"}, programModule)
+	builtinLib.Set(Identifier{"Errors"}, errorsModule)
+	builtinLib.Set(Identifier{"Types"}, typesModule)
+	builtinLib.Set(Identifier{"Text"}, textModule)
 }
 
 type Number struct {
@@ -1198,7 +1288,7 @@ func (t Text) Type() string    { return TEXT }
 func (t Text) Inspect() string { return t.Value }
 
 type Function struct {
-	Parameters map[TableKey]Value
+	Parameters *orderedmap.OrderedMap[TableKey, Value]
 	Body       Block
 	Rest       *RestOperator
 	Env        *Environment
@@ -1208,7 +1298,7 @@ func (f Function) Type() string    { return FUNCTION }
 func (f Function) Inspect() string { return "Function Declaration" }
 
 type Table struct {
-	Entries map[Value]Value
+	Entries *orderedmap.OrderedMap[Value, Value]
 }
 
 var tableIndentLevel int
@@ -1226,7 +1316,8 @@ func (t Table) Inspect() string {
 	var out bytes.Buffer
 	out.WriteString("{\n")
 	tableIndentLevel += 4
-	for key, value := range t.Entries {
+	for _, key := range t.Entries.Keys() {
+		value, _ := t.Entries.Get(key)
 		var k string
 		var v string
 		switch key.(type) {
@@ -1250,7 +1341,7 @@ func (t Table) Inspect() string {
 	return out.String()
 }
 func (t Table) Get(name string) (Value, bool) {
-	val, ok := t.Entries[TableKey{name}]
+	val, ok := t.Entries.Get(TableKey{name})
 	if !ok {
 		panic("no ident")
 	}
@@ -1264,12 +1355,14 @@ type TableKey struct {
 func (tk TableKey) Type() string    { return TABLE_KEY }
 func (tk TableKey) Inspect() string { return tk.Value }
 
+type BuiltinFunctionContract struct {
+	Parameters *orderedmap.OrderedMap[TableKey, Value]
+	Rest       *RestOperator
+}
+
 type BuiltinFunction struct {
+	Contract BuiltinFunctionContract
 	Fn       func(args map[string]Value) Value
-	Contract struct {
-		Parameters map[TableKey]Value
-		Rest       *RestOperator
-	}
 }
 
 func (b BuiltinFunction) Type() string    { return BUILTIN }
@@ -1304,8 +1397,8 @@ type Gettable interface {
 	Get(name string) (Value, bool)
 }
 
-func Eval(_node Node, env *Environment) Value {
-	switch node := _node.(type) {
+func Eval(node Node, env *Environment) Value {
+	switch node := node.(type) {
 	case Program:
 		var res Value
 		for _, nd := range node.Body {
@@ -1423,13 +1516,81 @@ func Eval(_node Node, env *Environment) Value {
 		return res
 
 	case CaseExpression:
+		var subject Value
+		if node.Subject != nil {
+			subject = Eval(node.Subject, env)
+		}
+	caseLoop:
 		for _, _case := range node.Cases {
 			var patternResult Value
-			if node.Subject == nil {
+			var patternEnviron Environment = Environment{Store: map[string]Value{}, Outer: env}
+
+			if subject == nil {
 				patternResult = Eval(_case.Pattern, env)
 
 			} else {
-				patternResult = Boolean{reflect.DeepEqual(Eval(node.Subject, env), Eval(_case.Pattern, env))}
+				switch _pattern := _case.Pattern.(type) {
+				case TableLiteral:
+					if subject.Type() == TABLE {
+						ind := 0
+						patternEnviron = Environment{Store: map[string]Value{}, Outer: env}
+						usedKeys := map[Value]string{}
+						for _, entry := range _pattern.Entries {
+							var key Value
+							if entry.Key == nil {
+								key = Number{float64(ind)}
+								ind += 1
+							} else {
+								key = TableKey(*entry.Key)
+							}
+							val, ok := subject.(Table).Entries.Get(key)
+							if ok {
+								usedKeys[key] = ""
+								switch value := entry.Value.(type) {
+								case Identifier:
+									patternEnviron.Set(value.Value, val)
+									patternResult = Boolean{true}
+
+								case RestOperator:
+									if value.Value == nil && subject.(Table).Entries.Len() < len(node.Cases) {
+										if patternResult.(Boolean).Value {
+											break caseLoop
+										}
+									} else {
+										delete(usedKeys, key)
+										table := Table{Entries: orderedmap.NewOrderedMap[Value, Value]()}
+										i := 0
+										for _, key := range subject.(Table).Entries.Keys() {
+											if _, ok := usedKeys[key]; !ok {
+												if key.Type() == NUMBER {
+													key = Number{float64(i)}
+													i += 1
+												}
+												value, _ := subject.(Table).Entries.Get(key)
+												table.Entries.Set(key, value)
+											}
+										}
+										patternEnviron.Set(value.Value.(Identifier).Value, table)
+									}
+								default:
+									if !reflect.DeepEqual(val, Eval(entry.Value, env)) {
+										patternResult = Boolean{false}
+										break caseLoop
+									} else {
+										patternResult = Boolean{true}
+									}
+								}
+							} else {
+								patternResult = Boolean{false}
+								break caseLoop
+							}
+						}
+					}
+				default:
+					patternEnviron = Environment{Store: map[string]Value{}, Outer: env}
+					pattern := Eval(_pattern, env)
+					patternResult = Boolean{reflect.DeepEqual(subject, pattern)}
+				}
 			}
 			if patternResult == nil {
 				panic("pattern does not eval to anything")
@@ -1438,7 +1599,7 @@ func Eval(_node Node, env *Environment) Value {
 				panic("pattern result is not a boolean")
 			}
 			if patternResult.Inspect() == "true" {
-				return Eval(_case.Block, env)
+				return Eval(_case.Block, &patternEnviron)
 			}
 		}
 		if node.Default != nil {
@@ -1464,7 +1625,7 @@ func Eval(_node Node, env *Environment) Value {
 		}
 		switch subject := subject.(type) {
 		case Table:
-			val, ok := subject.Entries[index]
+			val, ok := subject.Entries.Get(index)
 			if !ok {
 				panic(fmt.Sprintf("bad index %s on table %s", index.Inspect(), subject.Inspect()))
 			}
@@ -1480,13 +1641,14 @@ func Eval(_node Node, env *Environment) Value {
 		}
 		return val
 	case FunctionDeclaration:
-		fn := Function{Parameters: map[TableKey]Value{}, Body: node.Body, Rest: node.Rest, Env: env}
+		fn := Function{Parameters: orderedmap.NewOrderedMap[TableKey, Value](), Body: node.Body, Rest: node.Rest, Env: env}
 
-		for name, param_default := range node.Parameters {
+		for _, name := range node.Parameters.Keys() {
+			param_default, _ := node.Parameters.Get(name)
 			if param_default == nil {
-				fn.Parameters[TableKey(name)] = nil
+				fn.Parameters.Set(TableKey(name), nil)
 			} else {
-				fn.Parameters[TableKey(name)] = Eval(param_default, env)
+				fn.Parameters.Set(TableKey(name), Eval(param_default, env))
 			}
 
 		}
@@ -1500,7 +1662,8 @@ func Eval(_node Node, env *Environment) Value {
 		case Function:
 			funcEnviron := &Environment{Store: make(map[string]Value), Outer: function.Env}
 			i := 0
-			for name, param_default := range function.Parameters {
+			for _, name := range function.Parameters.Keys() {
+				param_default, _ := function.Parameters.Get(name)
 				if len(node.Arguments) > i {
 					arg := node.Arguments[i]
 					switch value := arg.Value.(type) {
@@ -1510,9 +1673,10 @@ func Eval(_node Node, env *Environment) Value {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
 						}
 						rest := _rest.(Table)
-						for key, value := range rest.Entries {
+						for _, key := range rest.Entries.Keys() {
+							value, _ := rest.Entries.Get(key)
 							if key != nil {
-								if _, ok := function.Parameters[key.(TableKey)]; ok {
+								if _, ok := function.Parameters.Get(key.(TableKey)); ok {
 									funcEnviron.Set(key.(TableKey).Value, value)
 								} else {
 									panic(fmt.Sprintf("Cannot spread items with names that arent in the parameters (%s)", key.Inspect()))
@@ -1542,8 +1706,8 @@ func Eval(_node Node, env *Environment) Value {
 				}
 				i += 1
 			}
-			if function.Rest != nil && len(function.Parameters) < len(node.Arguments) {
-				rest := Table{Entries: map[Value]Value{}}
+			if function.Rest != nil && function.Parameters.Len() < len(node.Arguments) {
+				rest := Table{Entries: orderedmap.NewOrderedMap[Value, Value]()}
 				ind := 0
 				for _, arg := range node.Arguments[i:] {
 					switch value := arg.Value.(type) {
@@ -1553,9 +1717,10 @@ func Eval(_node Node, env *Environment) Value {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
 						}
 						rest := _rest.(Table)
-						for key, value := range rest.Entries {
+						for _, key := range rest.Entries.Keys() {
+							value, _ := rest.Entries.Get(key)
 							if key != nil {
-								if _, ok := function.Parameters[key.(TableKey)]; ok {
+								if _, ok := function.Parameters.Get(key.(TableKey)); ok {
 									funcEnviron.Set(key.(TableKey).Value, value)
 								} else {
 									panic("Cannot spread items with names that arent in the parameters")
@@ -1566,9 +1731,9 @@ func Eval(_node Node, env *Environment) Value {
 						}
 					default:
 						if arg.Name != nil {
-							rest.Entries[TableKey(*arg.Name)] = Eval(arg.Value, env)
+							rest.Entries.Set(TableKey(*arg.Name), Eval(arg.Value, env))
 						} else {
-							rest.Entries[Number{float64(ind)}] = Eval(arg.Value, env)
+							rest.Entries.Set(Number{float64(ind)}, Eval(arg.Value, env))
 							ind += 1
 						}
 					}
@@ -1580,7 +1745,8 @@ func Eval(_node Node, env *Environment) Value {
 		case BuiltinFunction:
 			i := 0
 			funcEnviron := map[string]Value{}
-			for name, param_default := range function.Contract.Parameters {
+			for _, name := range function.Contract.Parameters.Keys() {
+				param_default, _ := function.Contract.Parameters.Get(name)
 				if len(node.Arguments) > i {
 					arg := node.Arguments[i]
 					switch value := arg.Value.(type) {
@@ -1590,9 +1756,10 @@ func Eval(_node Node, env *Environment) Value {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
 						}
 						rest := _rest.(Table)
-						for key, value := range rest.Entries {
+						for _, key := range rest.Entries.Keys() {
+							value, _ := rest.Entries.Get(key)
 							if key != nil {
-								if _, ok := function.Contract.Parameters[key.(TableKey)]; ok {
+								if _, ok := function.Contract.Parameters.Get(key.(TableKey)); ok {
 									funcEnviron[key.(TableKey).Value] = value
 								} else {
 									panic(fmt.Sprintf("Cannot spread items with names that arent in the parameters (%s)", key.Inspect()))
@@ -1622,8 +1789,8 @@ func Eval(_node Node, env *Environment) Value {
 				}
 				i += 1
 			}
-			if function.Contract.Rest != nil && len(function.Contract.Parameters) < len(node.Arguments) {
-				rest := Table{Entries: map[Value]Value{}}
+			if function.Contract.Rest != nil && function.Contract.Parameters.Len() < len(node.Arguments) {
+				rest := Table{Entries: orderedmap.NewOrderedMap[Value, Value]()}
 				ind := 0
 				for _, arg := range node.Arguments[i:] {
 					switch value := arg.Value.(type) {
@@ -1633,9 +1800,10 @@ func Eval(_node Node, env *Environment) Value {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
 						}
 						rest := _rest.(Table)
-						for key, value := range rest.Entries {
+						for _, key := range rest.Entries.Keys() {
+							value, _ := rest.Entries.Get(key)
 							if key != nil {
-								if _, ok := function.Contract.Parameters[key.(TableKey)]; ok {
+								if _, ok := function.Contract.Parameters.Get(key.(TableKey)); ok {
 									funcEnviron[key.(TableKey).Value] = value
 								} else {
 									panic("Cannot spread items with names that arent in the parameters")
@@ -1646,9 +1814,9 @@ func Eval(_node Node, env *Environment) Value {
 						}
 					default:
 						if arg.Name != nil {
-							rest.Entries[TableKey(*arg.Name)] = Eval(arg.Value, env)
+							rest.Entries.Set(TableKey(*arg.Name), Eval(arg.Value, env))
 						} else {
-							rest.Entries[Number{float64(ind)}] = Eval(arg.Value, env)
+							rest.Entries.Set(Number{float64(ind)}, Eval(arg.Value, env))
 							ind += 1
 						}
 					}
@@ -1659,7 +1827,7 @@ func Eval(_node Node, env *Environment) Value {
 
 		}
 	case TableLiteral:
-		entries := map[Value]Value{}
+		entries := orderedmap.NewOrderedMap[Value, Value]()
 		index := -1
 		for _, entry := range node.Entries {
 			if entry.Key == nil {
@@ -1670,21 +1838,22 @@ func Eval(_node Node, env *Environment) Value {
 						panic("cannot spread non table values")
 					}
 					table := _table.(Table)
-					for key, value := range table.Entries {
+					for _, key := range table.Entries.Keys() {
+						value, _ := table.Entries.Get(key)
 						switch key := key.(type) {
 						case TableKey:
-							entries[key] = value
+							entries.Set(key, value)
 						case Number:
 							index += 1
-							entries[Number{float64(index)}] = value
+							entries.Set(Number{float64(index)}, value)
 						}
 					}
 				default:
 					index += 1
-					entries[Number{float64(index)}] = Eval(entry.Value, env)
+					entries.Set(Number{float64(index)}, Eval(entry.Value, env))
 				}
 			} else {
-				entries[TableKey{entry.Key.Value}] = Eval(entry.Value, env)
+				entries.Set(TableKey{entry.Key.Value}, Eval(entry.Value, env))
 			}
 		}
 		return Table{entries}
@@ -1708,10 +1877,11 @@ func Eval(_node Node, env *Environment) Value {
 
 		for _, module := range node.Modules {
 
-			if builtin, ok := stdlib[module.Module]; ok {
-				unwrap(module.Module, builtin, env)
+			if builtin, ok := builtinLib.Get(module.Module); ok {
+				unwrap(module.Module, Table{builtin}, env)
 				for _, symbol := range module.Symbols {
-					env.Set(symbol.Value, builtin.Entries[TableKey(symbol)])
+					v, _ := builtin.Get(TableKey(symbol))
+					env.Set(symbol.Value, v)
 				}
 
 			} else {
@@ -1753,10 +1923,10 @@ func getModule(modulePath string) (Value, *Environment, error) {
 }
 
 func publicToTable(e *Environment) Table {
-	table := Table{Entries: map[Value]Value{}}
+	table := Table{Entries: orderedmap.NewOrderedMap[Value, Value]()}
 	for key, value := range e.Store {
 		if strings.HasPrefix(key, "pub ") {
-			table.Entries[TableKey{strings.SplitAfter(key, "pub ")[1]}] = value
+			table.Entries.Set(TableKey{strings.SplitAfter(key, "pub ")[1]}, value)
 		}
 	}
 	return table

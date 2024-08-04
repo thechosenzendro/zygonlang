@@ -12,29 +12,26 @@
 - allow use of user defined modules (search first at project root than lib root) [DONE]
 - fix calling functions in case patterns [DONE]
 - add a default keyword for case [DONE]
-- pattern matching with tables
 - a file can import itself, and there can be an import loop - resolve
+- pattern matching with tables [DONE]
 
-{1} - Matches a table with one entry (O: 1)
-{name: "frank"} - Matches a table with named entry (name: "frank")
+{1} - Matches a table with one entry (O: 1) [DONE]
+{name: "frank"} - Matches a table with named entry (name: "frank") [DONE]
 
 {name: name}
-if the name constant is defined, then it changes name to the value of name.
-if its not, then it will bind the value of name: to it.
+this will bind the value of name: to the name constant. [DONE]
 
-{1, ...} - Matches a table with one entry (0: 1) and variable number of other entries. if there is only one entry, panics.
+{1, ...} - Matches a table with one entry (0: 1) and variable number of other entries. if there is only one entry, it fails. [DONE]
 
 {1, ...names}
-if the names constant is defined, then it checks if names is a table, if it is, it compares it. if not it panics.
-if it isnt, it assigns rest of table to names.
-
+assignes rest of the table to "names" [DONE]
 - add ... operator (the rest operator) [DONE]
 normally, it should do nothing.
 
 in a function declaration, it means "put rest of the arguments in this table" [DONE]
 in a function call, it means "put all of the table entries as arguments to this function" [DONE]
 in a table literal, it means "add entries from this other table to this one" [DONE]
-also can be used in table literal as a "rest" matcher
+also can be used in table literal as a "rest" matcher [DONE]
 
 
 - add variadic arguments [DONE]
@@ -42,6 +39,7 @@ also can be used in table literal as a "rest" matcher
 - add contracts to builtin functions [DONE]
 - add builtin values [DONE]
 - using should set the last identifier in path instead of the first [DONE]
+- blocks should have its  own env
 - proper errors
 - add some way of documentation
 
