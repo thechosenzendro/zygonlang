@@ -1,3 +1,24 @@
-using Utils
+using Errors, Program, Text, IO, Table
 
-Utils.one
+NotFoundError: Errors.error("404 Not Found")
+
+p(text):
+    "<p>{text}</p>"
+
+req:
+    IO.get("Url request> ")
+    Text.split(_, "/")
+    case:
+        _.(0) is "": Table.delete(_, 0)
+        default: _
+
+IO.log(req)
+
+resp:
+    case req:
+        {"greet", name}: p("Hi, {name}!")
+        default: NotFoundError
+
+case resp:
+    NotFoundError: Program.crash("Bad Request")
+    default: resp
