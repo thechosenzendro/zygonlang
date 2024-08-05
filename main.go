@@ -180,8 +180,12 @@ func lexToken(source *Stream[rune]) []Token {
 					hasDecimal = true
 				}
 			}
-			buf = append(buf, *source.peek(0))
-			source.consume(1)
+			if *source.peek(0) == '_' {
+				source.consume(1)
+			} else {
+				buf = append(buf, *source.peek(0))
+				source.consume(1)
+			}
 		}
 		if buf[len(buf)-1] == '.' {
 			panic("No fractional part")
