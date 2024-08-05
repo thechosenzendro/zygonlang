@@ -1,6 +1,3 @@
-IO..log()
+using IO
 
-Soubor
-Line
-Substring kde udělat carret[start:end]
-
+IO.log("Hello World")
