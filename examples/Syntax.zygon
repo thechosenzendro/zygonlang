@@ -1,4 +1,4 @@
-variable: 1
+constant: 1
 
 func(x, y): x + y
 

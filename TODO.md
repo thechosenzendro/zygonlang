@@ -42,16 +42,4 @@ also can be used in table literal as a "rest" matcher [DONE]
 - blocks should have its  own env
 - proper errors
 - add some way of documentation
-
-Error: Cannot reassign identifier x
-
-```python
-2. x: 4 # Problem
-```
-You already assigned x at
-```python
-1. x: 2
-```
-
-Why?
-Zygon is immutable, blablabla
+- add package management
