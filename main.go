@@ -22,7 +22,7 @@ func main() {
 	path := "./examples/Main.zygon"
 	_base := strings.Split(path, "/")
 	projectRoot = strings.Join(_base[:len(_base)-1], "/") + "/"
-	sourceCode, err := os.ReadFile("./examples/Main.zygon")
+	sourceCode, err := os.ReadFile(path)
 	if err != nil {
 		panic(err)
 	}
@@ -227,9 +227,9 @@ func lexToken(source *Stream[rune]) []Token {
 			} else if *source.peek(0) == '\\' {
 				source.consume(1)
 				if *source.peek(0) == 'n' {
-					buf = append(buf, rune(10))
+					buf = append(buf, '\n')
 				} else if *source.peek(0) == 't' {
-					buf = append(buf, rune(9))
+					buf = append(buf, '\t')
 				} else {
 					buf = append(buf, *source.peek(0))
 				}
@@ -248,35 +248,38 @@ func lexToken(source *Stream[rune]) []Token {
 
 	case *source.peek(0) == '\n':
 		source.consume(1)
-		tokens = append(tokens, Token{EOL, "\\n"})
-		currentIndentLevel := 0
+		if parenLevel == 0 {
+			tokens = append(tokens, Token{EOL, "\\n"})
+			currentIndentLevel := 0
 
-		if source.peek(0) != nil {
-			for {
-				if *source.peek(0) == ' ' {
-					currentIndentLevel += 1
-					source.consume(1)
+			if source.peek(0) != nil {
+				for {
+					if *source.peek(0) == ' ' {
+						currentIndentLevel += 1
+						source.consume(1)
 
-				} else if *source.peek(0) == '\t' {
-					currentIndentLevel += 4
-					source.consume(1)
+					} else if *source.peek(0) == '\t' {
+						currentIndentLevel += 4
+						source.consume(1)
 
-				} else {
-					break
+					} else {
+						break
+					}
 				}
 			}
-		}
-		for {
-			if currentIndentLevel == indentLevel[len(indentLevel)-1] {
-				break
+			for {
+				if currentIndentLevel == indentLevel[len(indentLevel)-1] {
+					break
+				}
+				if currentIndentLevel > indentLevel[len(indentLevel)-1] {
+					indentLevel = append(indentLevel, currentIndentLevel)
+					tokens = append(tokens, Token{INDENT, strconv.Itoa(currentIndentLevel)})
+				} else if currentIndentLevel < indentLevel[len(indentLevel)-1] {
+					tokens = append(tokens, Token{DEDENT, strconv.Itoa(indentLevel[len(indentLevel)-1])})
+					indentLevel = indentLevel[:len(indentLevel)-1]
+				}
 			}
-			if currentIndentLevel > indentLevel[len(indentLevel)-1] {
-				indentLevel = append(indentLevel, currentIndentLevel)
-				tokens = append(tokens, Token{INDENT, strconv.Itoa(currentIndentLevel)})
-			} else if currentIndentLevel < indentLevel[len(indentLevel)-1] {
-				tokens = append(tokens, Token{DEDENT, strconv.Itoa(indentLevel[len(indentLevel)-1])})
-				indentLevel = indentLevel[:len(indentLevel)-1]
-			}
+
 		}
 
 	case *source.peek(0) == '(':
@@ -351,17 +354,17 @@ type Program struct {
 	Body []Node
 }
 
-type Ident interface {
+type Name interface {
 	Expression
-	Ident()
+	Name()
 }
 
 type Identifier struct {
 	Value string
 }
 
-func (Identifier) Expr()  {}
-func (Identifier) Ident() {}
+func (Identifier) Expr() {}
+func (Identifier) Name() {}
 
 type NumberLiteral struct {
 	Value float64
@@ -385,7 +388,7 @@ type TextPart struct {
 	Value string
 }
 
-func (s TextPart) Expr() {}
+func (TextPart) Expr() {}
 
 type PubStatement struct {
 	Public Node
@@ -402,11 +405,13 @@ func (AssignmentStatement) Stmt() {}
 
 type CaseExpression struct {
 	Subject Expression
-	Cases   []struct {
-		Pattern Expression
-		Block   Block
-	}
+	Cases   []CaseExpressionCase
 	Default *Block
+}
+
+type CaseExpressionCase struct {
+	Pattern Expression
+	Block   Block
 }
 
 func (CaseExpression) Expr() {}
@@ -416,10 +421,12 @@ type Block struct {
 }
 
 type UsingStatement struct {
-	Modules []struct {
-		Module  Ident
-		Symbols []Identifier
-	}
+	Modules []Module
+}
+
+type Module struct {
+	Module  Name
+	Symbols []Identifier
 }
 
 func (UsingStatement) Stmt() {}
@@ -448,21 +455,24 @@ type FunctionDeclaration struct {
 
 func (FunctionDeclaration) Expr() {}
 
+type FunctionCallArgument struct {
+	Name  *TableKey
+	Value Expression
+}
+
 type FunctionCall struct {
 	Fn        Expression
-	Arguments []struct {
-		Name  *TableKey
-		Value Expression
-	}
+	Arguments []FunctionCallArgument
 }
 
 func (FunctionCall) Expr() {}
 
+type TableEntry struct {
+	Key   *Identifier
+	Value Expression
+}
 type TableLiteral struct {
-	Entries []struct {
-		Key   *Identifier
-		Value Expression
-	}
+	Entries []TableEntry
 }
 
 func (TableLiteral) Expr() {}
@@ -478,8 +488,8 @@ type AccessOperator struct {
 	Attribute Expression
 }
 
-func (AccessOperator) Expr()  {}
-func (AccessOperator) Ident() {}
+func (AccessOperator) Expr() {}
+func (AccessOperator) Name() {}
 
 type RestOperator struct {
 	Value Expression
@@ -487,13 +497,8 @@ type RestOperator struct {
 
 func (RestOperator) Expr() {}
 
-type (
-	prefixParseFn func(*Stream[Token]) Expression
-	infixParseFn  func(*Stream[Token], Expression) Expression
-)
-
-var prefixParseFns = map[TokenType]prefixParseFn{}
-var infixParseFns = map[TokenType]infixParseFn{}
+var prefixParsers = map[TokenType]func(*Stream[Token]) Expression{}
+var infixParsers = map[TokenType]func(*Stream[Token], Expression) Expression{}
 var precedences = map[TokenType]int{
 	DOT:          ACCESS,
 	IS:           EQUALS,
@@ -538,29 +543,29 @@ func parseRestOperator(tokens *Stream[Token]) Expression {
 
 func Parse(tokens *Stream[Token]) Program {
 	program := Program{Body: []Node{}}
-	prefixParseFns[IDENT] = parseIdentifier
-	prefixParseFns[NUM] = parseNumberLiteral
-	prefixParseFns[NOT] = parsePrefixExpression
-	prefixParseFns[MINUS] = parsePrefixExpression
-	prefixParseFns[TRUE] = parseBooleanLiteral
-	prefixParseFns[FALSE] = parseBooleanLiteral
-	prefixParseFns[LPAREN] = resolveLParen
-	prefixParseFns[CASE] = parseCaseExpression
-	prefixParseFns[TEXT_START] = parseTextLiteral
-	prefixParseFns[LBRACE] = parseTableLiteral
-	prefixParseFns[REST] = parseRestOperator
+	prefixParsers[IDENT] = parseIdentifier
+	prefixParsers[NUM] = parseNumberLiteral
+	prefixParsers[NOT] = parsePrefixExpression
+	prefixParsers[MINUS] = parsePrefixExpression
+	prefixParsers[TRUE] = parseBooleanLiteral
+	prefixParsers[FALSE] = parseBooleanLiteral
+	prefixParsers[LPAREN] = resolveLParen
+	prefixParsers[CASE] = parseCaseExpression
+	prefixParsers[TEXT_START] = parseTextLiteral
+	prefixParsers[LBRACE] = parseTableLiteral
+	prefixParsers[REST] = parseRestOperator
 
-	infixParseFns[PLUS] = parseInfixExpression
-	infixParseFns[MINUS] = parseInfixExpression
-	infixParseFns[STAR] = parseInfixExpression
-	infixParseFns[SLASH] = parseInfixExpression
-	infixParseFns[IS] = parseIsExpression
-	infixParseFns[GREATER_THAN] = parseInfixExpression
-	infixParseFns[LESSER_THAN] = parseInfixExpression
-	infixParseFns[AND] = parseInfixExpression
-	infixParseFns[OR] = parseInfixExpression
-	infixParseFns[LPAREN] = parseFunction
-	infixParseFns[DOT] = parseAccessOperator
+	infixParsers[PLUS] = parseInfixExpression
+	infixParsers[MINUS] = parseInfixExpression
+	infixParsers[STAR] = parseInfixExpression
+	infixParsers[SLASH] = parseInfixExpression
+	infixParsers[IS] = parseIsExpression
+	infixParsers[GREATER_THAN] = parseInfixExpression
+	infixParsers[LESSER_THAN] = parseInfixExpression
+	infixParsers[AND] = parseInfixExpression
+	infixParsers[OR] = parseInfixExpression
+	infixParsers[LPAREN] = parseFunction
+	infixParsers[DOT] = parseAccessOperator
 	for tokens.peek(0).Type != EOF {
 		if tokens.peek(0).Type != EOL {
 			var node Node = nil
@@ -601,7 +606,7 @@ func parseAccessOperator(tokens *Stream[Token], left Expression) Expression {
 	} else if tokens.peek(0).Type == LPAREN {
 		return AccessOperator{Subject: left, Attribute: Grouped{parseGroupedExpression(tokens)}}
 	}
-	panic("Not compatible with index")
+	panic(fmt.Sprintf("expected an IDENT or LPAREN, not %s", tokens.peek(0).Type))
 }
 
 func resolveLParen(tokens *Stream[Token]) Expression {
@@ -659,13 +664,19 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 					param_default = parseExpression(tokens, LOWEST)
 					tokens.consume(1)
 				}
+				if isToken(tokens, COMMA, 0) {
+					tokens.consume(1)
+				} else if !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
+					panic("no comma in function declaration")
+				}
 				expr.Parameters.Set(name, param_default)
-			} else if isToken(tokens, COMMA, 0) {
-				tokens.consume(1)
+
 			} else if isToken(tokens, REST, 0) {
 				rest := parseRestOperator(tokens).(RestOperator)
 				expr.Rest = &rest
 				tokens.consume(1)
+			} else {
+				panic(fmt.Sprintf("Expected an IDENT, not %s", tokens.peek(0).Type))
 			}
 		}
 		tokens.consume(1)
@@ -683,10 +694,7 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 		tokens.consume(1)
 		for !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
 			if isToken(tokens, IDENT, 0) {
-				argument := struct {
-					Name  *TableKey
-					Value Expression
-				}{}
+				argument := FunctionCallArgument{}
 				if isToken(tokens, COLON, 1) {
 					switch name := parseIdentifier(tokens).(type) {
 					case Identifier:
@@ -696,17 +704,22 @@ func parseFunction(tokens *Stream[Token], fn Expression) Expression {
 				}
 				argument.Value = parseExpression(tokens, LOWEST)
 				tokens.consume(1)
+				if isToken(tokens, COMMA, 0) {
+					tokens.consume(1)
+				} else if !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
+					panic("no comma in function call")
+				}
 				expr.Arguments = append(expr.Arguments, argument)
-			} else if isToken(tokens, COMMA, 0) {
-				tokens.consume(1)
 			} else {
-				argument := struct {
-					Name  *TableKey
-					Value Expression
-				}{}
+				argument := FunctionCallArgument{}
 				argument.Name = nil
 				argument.Value = parseExpression(tokens, LOWEST)
 				tokens.consume(1)
+				if isToken(tokens, COMMA, 0) {
+					tokens.consume(1)
+				} else if !(isToken(tokens, RPAREN, 0) && tokens.peek(0).Value == parenLevel) {
+					panic("no comma in function call")
+				}
 				expr.Arguments = append(expr.Arguments, argument)
 			}
 		}
@@ -741,17 +754,21 @@ func parsePubStatement(tokens *Stream[Token]) Statement {
 	return stmt
 }
 
-func parseUsingPath(tokens *Stream[Token]) Ident {
+func parseUsingPath(tokens *Stream[Token]) Name {
 	if isToken(tokens, IDENT, 0) {
 		if (isToken(tokens, DOT, 1) && isToken(tokens, LPAREN, 2)) || (isToken(tokens, EOL, 1) || isToken(tokens, COMMA, 1)) {
 			return Identifier{tokens.peek(0).Value}
-		} else if isToken(tokens, DOT, 1) && isToken(tokens, IDENT, 2) {
-			subject := Identifier{tokens.peek(0).Value}
-			tokens.consume(2)
-			return AccessOperator{Subject: subject, Attribute: parseUsingPath(tokens)}
+		} else if isToken(tokens, DOT, 1) {
+			if isToken(tokens, IDENT, 2) {
+				subject := Identifier{tokens.peek(0).Value}
+				tokens.consume(2)
+				return AccessOperator{Subject: subject, Attribute: parseUsingPath(tokens)}
+			} else {
+				panic("expected an IDENT or ( after this")
+			}
 		}
 	}
-	panic("a")
+	panic("")
 }
 
 func parseUsingStatement(tokens *Stream[Token]) Statement {
@@ -761,10 +778,7 @@ func parseUsingStatement(tokens *Stream[Token]) Statement {
 		if isToken(tokens, EOL, 0) {
 			break
 		} else if isToken(tokens, IDENT, 0) {
-			mod := struct {
-				Module  Ident
-				Symbols []Identifier
-			}{Module: parseUsingPath(tokens)}
+			mod := Module{Module: parseUsingPath(tokens)}
 			fmt.Println(mod.Module)
 			tokens.consume(1)
 			endsWithDot := false
@@ -777,6 +791,7 @@ func parseUsingStatement(tokens *Stream[Token]) Statement {
 				if !isToken(tokens, LPAREN, 0) {
 					panic("no left paren in using")
 				}
+
 				tokens.consume(1)
 				for {
 					if isToken(tokens, RPAREN, 0) {
@@ -784,18 +799,38 @@ func parseUsingStatement(tokens *Stream[Token]) Statement {
 					} else if isToken(tokens, IDENT, 0) {
 						mod.Symbols = append(mod.Symbols, parseIdentifier(tokens).(Identifier))
 						tokens.consume(1)
-					} else if isToken(tokens, COMMA, 0) {
+						if isToken(tokens, COMMA, 0) {
+							tokens.consume(1)
+						} else if isToken(tokens, RPAREN, 0) {
+
+						} else {
+							panic(fmt.Sprintf("expected a COMMA or a newline, not %s", tokens.peek(0).Type))
+						}
+					} else if isToken(tokens, EOL, 0) {
 						tokens.consume(1)
+					} else if isToken(tokens, EOF, 0) {
+						panic("unexpected end of .()")
+					} else {
+						panic(fmt.Sprintf("expected a module name, not %s", tokens.peek(0).Type))
 					}
 				}
 				tokens.consume(1)
 			}
+			if isToken(tokens, COMMA, 0) {
+				tokens.consume(1)
+			} else if isToken(tokens, EOL, 0) {
 
+			} else {
+				panic(fmt.Sprintf("expected a COMMA or a newline, not %s", tokens.peek(0).Type))
+			}
 			stmt.Modules = append(stmt.Modules, mod)
-		} else if isToken(tokens, COMMA, 0) {
-			tokens.consume(1)
+		} else {
+			panic(fmt.Sprintf("expected a name of a module, not %s", tokens.peek(0).Type))
 		}
 
+	}
+	if len(stmt.Modules) == 0 {
+		panic("expected a name of a module after this")
 	}
 	return stmt
 }
@@ -805,10 +840,7 @@ func parseTableLiteral(tokens *Stream[Token]) Expression {
 	braceLevel := tokens.peek(0).Value
 	tokens.consume(1)
 	for !(isToken(tokens, RBRACE, 0) && tokens.peek(0).Value == braceLevel) {
-		entry := struct {
-			Key   *Identifier
-			Value Expression
-		}{}
+		entry := TableEntry{}
 		if isToken(tokens, IDENT, 0) {
 			val := parseIdentifier(tokens)
 
@@ -898,10 +930,7 @@ func parseCaseExpression(tokens *Stream[Token]) Expression {
 			if isToken(tokens, EOL, 0) {
 				tokens.consume(1)
 			}
-			expr.Cases = append(expr.Cases, struct {
-				Pattern Expression
-				Block   Block
-			}{pattern, block})
+			expr.Cases = append(expr.Cases, CaseExpressionCase{pattern, block})
 		}
 	}
 	parsingCase = false
@@ -917,7 +946,7 @@ func parseBlock(tokens *Stream[Token]) Block {
 	}
 	tokens.consume(1)
 	if !isToken(tokens, INDENT, 0) {
-		panic("no indent in case expression")
+		panic("expected INDENT or a value after this")
 	}
 	indentLevel := tokens.peek(0).Value
 	tokens.consume(1)
@@ -1002,14 +1031,14 @@ func parseTextLiteral(tokens *Stream[Token]) Expression {
 }
 
 func parseExpression(tokens *Stream[Token], precedence int) Expression {
-	prefix := prefixParseFns[tokens.peek(0).Type]
+	prefix := prefixParsers[tokens.peek(0).Type]
 	if prefix == nil {
 		panic(fmt.Sprintf("Did not expect %s", tokens.peek(0).Type))
 	}
 	leftExpr := prefix(tokens)
 
 	for !(tokens.peek(1).Type == EOL) && precedence < getPrecedence(*tokens.peek(1)) {
-		infix := infixParseFns[tokens.peek(1).Type]
+		infix := infixParsers[tokens.peek(1).Type]
 		if infix == nil {
 			return leftExpr
 		}
@@ -1049,7 +1078,7 @@ func orderedMapFromArgs[K, V comparable](y []KV[K, V]) *orderedmap.OrderedMap[K,
 	return x
 }
 
-var builtinLib = orderedmap.NewOrderedMap[Ident, *orderedmap.OrderedMap[Value, Value]]()
+var builtinLib = orderedmap.NewOrderedMap[Name, *orderedmap.OrderedMap[Value, Value]]()
 
 func setupBuiltinLib() {
 	// IO module
@@ -1893,7 +1922,7 @@ func Eval(node Node, env *Environment) Value {
 				panic("anonymous function could not be made public")
 			}
 		default:
-			panic("error in pub statement")
+			panic(fmt.Sprintf("%T cannot be made public", pub))
 		}
 	case UsingStatement:
 		libRoot := "./lib"
@@ -1955,21 +1984,21 @@ func publicToTable(e *Environment) Table {
 	return table
 }
 
-func unwrap(m Ident, toPut Table, env *Environment) {
+func unwrap(m Name, toPut Table, env *Environment) {
 	switch m := m.(type) {
 	case AccessOperator:
-		unwrap(m.Attribute.(Ident), toPut, env)
+		unwrap(m.Attribute.(Name), toPut, env)
 	case Identifier:
 		env.Set(m.Value, toPut)
 	}
 }
 
-func getModPath(module Ident) string {
+func getModPath(module Name) string {
 	switch mod := module.(type) {
 	case Identifier:
 		return "/" + mod.Value + ".zygon"
 	case AccessOperator:
-		return "/" + mod.Subject.(Identifier).Value + "/" + getModPath(mod.Attribute.(Ident))
+		return "/" + mod.Subject.(Identifier).Value + "/" + getModPath(mod.Attribute.(Name))
 	}
 	return ""
 }

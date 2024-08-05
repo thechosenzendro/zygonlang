@@ -1,1 +1,2 @@
 pub foo(x): x
+pub bar(x): x

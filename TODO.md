@@ -1,6 +1,6 @@
 - change accessor syntax [DONE]
 - change modules to tables [DONE]
-- make the code robust
+- make the code robust [DONE]
 - add the static analyzer (the whole reason this project started in the first place)
 - add a way to change a table (Table.change) [DONE]
 - add IO.get (input) [DONE]
