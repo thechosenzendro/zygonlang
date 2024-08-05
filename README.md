@@ -30,6 +30,19 @@ fib(n):
 fib(9) # Returns 34
 ```
 
+## Web server setup
+```python
+using HTTP, HTML.(p, h1)
+
+
+
+router(path):
+    {"greet", name}: greet(name)
+    default: not_found()
+
+HTTP.serve(router, port: 8080)
+```
+
 # Style rules
 - 4 spaced indentation
 - modules are read as utf-8

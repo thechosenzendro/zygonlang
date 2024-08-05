@@ -133,7 +133,7 @@ func lexToken(source *Stream[rune]) []Token {
 		}
 	case unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_':
 		buf := []rune{}
-		for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_') {
+		for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_' || unicode.IsDigit(*source.peek(0))) {
 			buf = append(buf, *source.peek(0))
 			source.consume(1)
 		}
