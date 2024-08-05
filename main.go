@@ -188,7 +188,7 @@ func lexToken(source *Stream[rune]) []Token {
 			}
 		}
 		if buf[len(buf)-1] == '.' {
-			panic("No fractional part")
+			panic("Expected fractional part after DOT in number literal")
 		}
 		tokens = append(tokens, Token{NUM, string(buf)})
 
@@ -985,7 +985,7 @@ func parseTextLiteral(tokens *Stream[Token]) Expression {
 func parseExpression(tokens *Stream[Token], precedence int) Expression {
 	prefix := prefixParseFns[tokens.peek(0).Type]
 	if prefix == nil {
-		panic(fmt.Sprintf("No prefix parser for %s", tokens.peek(0)))
+		panic(fmt.Sprintf("Did not expect %s", tokens.peek(0).Type))
 	}
 	leftExpr := prefix(tokens)
 
