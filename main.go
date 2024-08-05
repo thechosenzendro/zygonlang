@@ -197,6 +197,9 @@ func lexToken(source *Stream[rune]) []Token {
 		tokens = append(tokens, Token{TEXT_START, ""})
 		buf := []rune{}
 		for {
+			if source.peek(0) == nil {
+				panic("Unterminated text literal")
+			}
 			if *source.peek(0) == '"' {
 				break
 			} else if *source.peek(0) == '{' {
@@ -206,6 +209,16 @@ func lexToken(source *Stream[rune]) []Token {
 				buf = []rune{}
 				source.consume(1)
 				for *source.peek(0) != '}' && braceLevel == bl {
+					i := 0
+					for {
+						if source.peek(i) == nil {
+							panic("Unterminated interpolation in text literal")
+						}
+						if *source.peek(i) == '}' && braceLevel == bl {
+							break
+						}
+						i += 1
+					}
 					tokens = append(tokens, lexToken(source)...)
 				}
 				source.consume(1)
@@ -213,7 +226,13 @@ func lexToken(source *Stream[rune]) []Token {
 
 			} else if *source.peek(0) == '\\' {
 				source.consume(1)
-				buf = append(buf, *source.peek(0))
+				if *source.peek(0) == 'n' {
+					buf = append(buf, rune(10))
+				} else if *source.peek(0) == 't' {
+					buf = append(buf, rune(9))
+				} else {
+					buf = append(buf, *source.peek(0))
+				}
 				source.consume(1)
 			} else {
 				buf = append(buf, *source.peek(0))
