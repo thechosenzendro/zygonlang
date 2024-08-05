@@ -30,11 +30,15 @@ fib(n):
 fib(9) # Returns 34
 ```
 
-## Web server setup
+## Web server setup (coming soon)
 ```python
 using HTTP, HTML.(p, h1)
 
+not_found():
+    h1("404 Not Found")
 
+greet(name):
+    p("Hello, {name}!")
 
 router(path):
     {"greet", name}: greet(name)
