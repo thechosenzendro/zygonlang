@@ -101,13 +101,6 @@ func (t Table) Inspect() string {
 	out.WriteString(fmt.Sprintf("%s}\n", indent()))
 	return out.String()
 }
-func (t Table) Get(name string) (Value, bool) {
-	val, ok := t.Entries.Get(TableKey{name})
-	if !ok {
-		panic("no ident")
-	}
-	return val, ok
-}
 
 type TableKey struct {
 	Value string
@@ -134,7 +127,7 @@ type Error struct {
 }
 
 func (e Error) Type() string    { return ERROR }
-func (e Error) Inspect() string { return fmt.Sprintf("error(%s)", e.Value) }
+func (e Error) Inspect() string { return fmt.Sprintf("Error(%s)", e.Value) }
 
 type Environment struct {
 	Store map[string]Value
@@ -263,6 +256,10 @@ func Eval(node Node, env *Environment) Value {
 			switch nd := nd.(type) {
 			case AssignmentStatement:
 			case FunctionDeclaration:
+			case UsingStatement:
+				panic("a using statement can only be at the top level")
+			case PubStatement:
+				panic("a pub statement can only be at the top level")
 			default:
 				run = false
 				res = Eval(nd, env)
@@ -368,6 +365,9 @@ func Eval(node Node, env *Environment) Value {
 	case AssignmentStatement:
 		if _, ok := env.Get(node.Name.Value); !ok {
 			val := Eval(node.Value, env)
+			if val == nil {
+				panic("value does not produce anything")
+			}
 			env.Set(node.Name.Value, val)
 			return nil
 		} else {

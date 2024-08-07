@@ -34,6 +34,12 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 	ioModule.Set(
 		TableKey{"get"},
 		BuiltinFunction{
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"prompt"}, nil},
+				}),
+				Rest: nil,
+			},
 			Fn: func(args map[string]Value) Value {
 				prompt := args["prompt"].Inspect()
 				fmt.Print(prompt)
@@ -44,12 +50,6 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 				}
 				return Text{input}
 			},
-			Contract: BuiltinFunctionContract{
-				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
-					{TableKey{"prompt"}, nil},
-				}),
-				Rest: nil,
-			},
 		},
 	)
 
@@ -59,6 +59,13 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 	tableModule.Set(
 		TableKey{"change"},
 		BuiltinFunction{
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"table"}, nil},
+					{TableKey{"changes"}, nil},
+				}),
+				Rest: nil,
+			},
 			Fn: func(args map[string]Value) Value {
 				table := args["table"]
 				switch table := table.(type) {
@@ -85,19 +92,19 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 
 				return newTable
 			},
-			Contract: BuiltinFunctionContract{
-				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
-					{TableKey{"table"}, nil},
-					{TableKey{"changes"}, nil},
-				}),
-				Rest: nil,
-			},
 		},
 	)
 	// Table.delete
 	tableModule.Set(
 		TableKey{"delete"},
 		BuiltinFunction{
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"table"}, nil},
+					{TableKey{"index"}, nil},
+				}),
+				Rest: nil,
+			},
 			Fn: func(args map[string]Value) Value {
 				oldTable := args["table"].(Table)
 				newTable := Table{Entries: orderedmap.NewOrderedMap[Value, Value]()}
@@ -117,13 +124,6 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 
 				return newTable
 			},
-			Contract: BuiltinFunctionContract{
-				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
-					{TableKey{"table"}, nil},
-					{TableKey{"index"}, nil},
-				}),
-				Rest: nil,
-			},
 		},
 	)
 
@@ -133,16 +133,17 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 	programModule.Set(
 		TableKey{"crash"},
 		BuiltinFunction{
-			Fn: func(args map[string]Value) Value {
-				fmt.Printf("Crash: %s\n", args["reason"].Inspect())
-				os.Exit(1)
-				return nil
-			},
 			Contract: BuiltinFunctionContract{
 				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
 					{TableKey{"reason"}, nil},
+					{TableKey{"exit_code"}, Number{1}},
 				}),
 				Rest: nil,
+			},
+			Fn: func(args map[string]Value) Value {
+				fmt.Printf("Crash: %s\n", args["reason"].Inspect())
+				os.Exit(int(args["exit_code"].(Number).Value))
+				return nil
 			},
 		},
 	)
@@ -153,18 +154,18 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 	errorsModule.Set(
 		TableKey{"error"},
 		BuiltinFunction{
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"message"}, nil},
+				}),
+				Rest: nil,
+			},
 			Fn: func(args map[string]Value) Value {
 				message := args["message"]
 				if message.Type() != TEXT {
 					panic("you need to supply text to Errors.error")
 				}
 				return Error{message.(Text).Value}
-			},
-			Contract: BuiltinFunctionContract{
-				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
-					{TableKey{"message"}, nil},
-				}),
-				Rest: nil,
 			},
 		},
 	)
@@ -187,6 +188,12 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 	typesModule.Set(
 		TableKey{"type"},
 		BuiltinFunction{
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"value"}, nil},
+				}),
+				Rest: nil,
+			},
 			Fn: func(args map[string]Value) Value {
 				switch args["value"].(type) {
 				case Number:
@@ -207,12 +214,6 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 					return Error{"unknown type"}
 				}
 			},
-			Contract: BuiltinFunctionContract{
-				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
-					{TableKey{"value"}, nil},
-				}),
-				Rest: nil,
-			},
 		},
 	)
 
@@ -222,6 +223,13 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 	textModule.Set(
 		TableKey{"split"},
 		BuiltinFunction{
+			Contract: BuiltinFunctionContract{
+				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
+					{TableKey{"text"}, nil},
+					{TableKey{"separator"}, nil},
+				}),
+				Rest: nil,
+			},
 			Fn: func(args map[string]Value) Value {
 				tbl := Table{Entries: orderedmap.NewOrderedMap[Value, Value]()}
 				split := strings.Split(args["text"].(Text).Value, args["separator"].(Text).Value)
@@ -230,13 +238,6 @@ func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Val
 				}
 				fmt.Println("text split", tbl.Inspect())
 				return tbl
-			},
-			Contract: BuiltinFunctionContract{
-				Parameters: orderedMapFromArgs([]KV[TableKey, Value]{
-					{TableKey{"text"}, nil},
-					{TableKey{"separator"}, nil},
-				}),
-				Rest: nil,
 			},
 		},
 	)

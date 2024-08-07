@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	if os.Args[1] == "run" {
+	if len(os.Args) > 1 && os.Args[1] == "run" {
 		sourceCode, err := os.ReadFile(os.Args[2])
 		if err != nil {
 			panic(err)

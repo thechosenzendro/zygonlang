@@ -1,3 +1,7 @@
-using IO
+using IO, Program
 
-IO.log("Hello World")
+x(y):
+    z: y
+    Program.crash(z, exit_code: 17)
+
+x(1)

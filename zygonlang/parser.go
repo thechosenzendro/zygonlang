@@ -629,7 +629,17 @@ func parseBlock(tokens *Stream[Token]) Block {
 		if tok.Type == DEDENT && tok.Value == indentLevel {
 			break
 		}
-		block.Body = append(block.Body, parseExpression(tokens, LOWEST))
+		var node Node = nil
+		if isToken(tokens, IDENT, 0) && isToken(tokens, COLON, 1) {
+			node = parseAssignmentStatement(tokens)
+		} else if isToken(tokens, USING, 0) {
+			node = parseUsingStatement(tokens)
+		} else if isToken(tokens, PUB, 0) {
+			node = parsePubStatement(tokens)
+		} else {
+			node = parseExpression(tokens, LOWEST)
+		}
+		block.Body = append(block.Body, node)
 		tokens.consume(1)
 	}
 	return block
