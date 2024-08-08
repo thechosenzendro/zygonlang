@@ -56,16 +56,16 @@ var braceLevel = 0
 var indentLevel = []int{0}
 
 func Tokenize(sourceCode string) stream.Stream[Token] {
-	source := &stream.Stream[rune]{0, []rune(sourceCode)}
-	tokens := &stream.Stream[Token]{0, []Token{}}
-	for source.peek(0) != nil {
+	source := &stream.Stream[rune]{Index: 0, Contents: []rune(sourceCode)}
+	tokens := &stream.Stream[Token]{Index: 0, Contents: []Token{}}
+	for source.Peek(0) != nil {
 		tokens.Contents = append(tokens.Contents, lexToken(source)...)
 	}
 	tokens.Contents = append(tokens.Contents, Token{EOF, ""})
 	return *tokens
 }
 
-func isToken(tokens *Stream[Token], tokenType TokenType, amount int) bool {
+func IsToken(tokens *stream.Stream[Token], tokenType TokenType, amount int) bool {
 	index := tokens.Index + amount
 
 	if index >= len(tokens.Contents) {
@@ -73,20 +73,20 @@ func isToken(tokens *Stream[Token], tokenType TokenType, amount int) bool {
 	}
 	return tokens.Contents[index].Type == tokenType
 }
-func lexToken(source *Stream[rune]) []Token {
+func lexToken(source *stream.Stream[rune]) []Token {
 	tokens := []Token{}
 
 	switch {
 
-	case *source.peek(0) == '#':
-		for *source.peek(0) != '\n' {
-			source.consume(1)
+	case *source.Peek(0) == '#':
+		for *source.Peek(0) != '\n' {
+			source.Consume(1)
 		}
-	case unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_':
+	case unicode.IsLetter(*source.Peek(0)) || *source.Peek(0) == '_':
 		buf := []rune{}
-		for source.peek(0) != nil && (unicode.IsLetter(*source.peek(0)) || *source.peek(0) == '_' || unicode.IsDigit(*source.peek(0))) {
-			buf = append(buf, *source.peek(0))
-			source.consume(1)
+		for source.Peek(0) != nil && (unicode.IsLetter(*source.Peek(0)) || *source.Peek(0) == '_' || unicode.IsDigit(*source.Peek(0))) {
+			buf = append(buf, *source.Peek(0))
+			source.Consume(1)
 		}
 		if string(buf) == "case" {
 			tokens = append(tokens, Token{CASE, "case"})
@@ -112,30 +112,30 @@ func lexToken(source *Stream[rune]) []Token {
 			tokens = append(tokens, Token{IDENT, string(buf)})
 
 		}
-	case *source.peek(0) == '.':
-		if *source.peek(1) == '.' && *source.peek(2) == '.' {
+	case *source.Peek(0) == '.':
+		if *source.Peek(1) == '.' && *source.Peek(2) == '.' {
 			tokens = append(tokens, Token{REST, "..."})
-			source.consume(3)
+			source.Consume(3)
 		} else {
 			tokens = append(tokens, Token{DOT, "."})
-			source.consume(1)
+			source.Consume(1)
 		}
-	case unicode.IsDigit(*source.peek(0)):
+	case unicode.IsDigit(*source.Peek(0)):
 		buf := []rune{}
 		hasDecimal := false
-		for source.peek(0) != nil && (unicode.IsDigit(*source.peek(0)) || *source.peek(0) == '_' || *source.peek(0) == '.') {
-			if *source.peek(0) == '.' {
+		for source.Peek(0) != nil && (unicode.IsDigit(*source.Peek(0)) || *source.Peek(0) == '_' || *source.Peek(0) == '.') {
+			if *source.Peek(0) == '.' {
 				if hasDecimal {
 					panic("Number literal cannot have more decimal parts")
 				} else {
 					hasDecimal = true
 				}
 			}
-			if *source.peek(0) == '_' {
-				source.consume(1)
+			if *source.Peek(0) == '_' {
+				source.Consume(1)
 			} else {
-				buf = append(buf, *source.peek(0))
-				source.consume(1)
+				buf = append(buf, *source.Peek(0))
+				source.Consume(1)
 			}
 		}
 		if buf[len(buf)-1] == '.' {
@@ -143,75 +143,75 @@ func lexToken(source *Stream[rune]) []Token {
 		}
 		tokens = append(tokens, Token{NUM, string(buf)})
 
-	case *source.peek(0) == '"':
-		source.consume(1)
+	case *source.Peek(0) == '"':
+		source.Consume(1)
 		tokens = append(tokens, Token{TEXT_START, ""})
 		buf := []rune{}
 		for {
-			if source.peek(0) == nil {
+			if source.Peek(0) == nil {
 				panic("Unterminated text literal")
 			}
-			if *source.peek(0) == '"' {
+			if *source.Peek(0) == '"' {
 				break
-			} else if *source.peek(0) == '{' {
+			} else if *source.Peek(0) == '{' {
 				braceLevel += 1
 				bl := braceLevel
 				tokens = append(tokens, Token{TEXT_PART, string(buf)})
 				buf = []rune{}
-				source.consume(1)
-				for *source.peek(0) != '}' && braceLevel == bl {
+				source.Consume(1)
+				for *source.Peek(0) != '}' && braceLevel == bl {
 					i := 0
 					for {
-						if source.peek(i) == nil {
+						if source.Peek(i) == nil {
 							panic("Unterminated interpolation in text literal")
 						}
-						if *source.peek(i) == '}' && braceLevel == bl {
+						if *source.Peek(i) == '}' && braceLevel == bl {
 							break
 						}
 						i += 1
 					}
 					tokens = append(tokens, lexToken(source)...)
 				}
-				source.consume(1)
+				source.Consume(1)
 				braceLevel -= 1
 
-			} else if *source.peek(0) == '\\' {
-				source.consume(1)
-				if *source.peek(0) == 'n' {
+			} else if *source.Peek(0) == '\\' {
+				source.Consume(1)
+				if *source.Peek(0) == 'n' {
 					buf = append(buf, '\n')
-				} else if *source.peek(0) == 't' {
+				} else if *source.Peek(0) == 't' {
 					buf = append(buf, '\t')
 				} else {
-					buf = append(buf, *source.peek(0))
+					buf = append(buf, *source.Peek(0))
 				}
-				source.consume(1)
+				source.Consume(1)
 			} else {
-				buf = append(buf, *source.peek(0))
-				source.consume(1)
+				buf = append(buf, *source.Peek(0))
+				source.Consume(1)
 			}
 		}
-		source.consume(1)
+		source.Consume(1)
 		tokens = append(tokens, Token{TEXT_PART, string(buf)})
 		tokens = append(tokens, Token{TEXT_END, ""})
 
-	case *source.peek(0) != '\n' && unicode.IsSpace(*source.peek(0)):
-		source.consume(1)
+	case *source.Peek(0) != '\n' && unicode.IsSpace(*source.Peek(0)):
+		source.Consume(1)
 
-	case *source.peek(0) == '\n':
-		source.consume(1)
+	case *source.Peek(0) == '\n':
+		source.Consume(1)
 		if parenLevel == 0 {
 			tokens = append(tokens, Token{EOL, "\\n"})
 			currentIndentLevel := 0
 
-			if source.peek(0) != nil {
+			if source.Peek(0) != nil {
 				for {
-					if *source.peek(0) == ' ' {
+					if *source.Peek(0) == ' ' {
 						currentIndentLevel += 1
-						source.consume(1)
+						source.Consume(1)
 
-					} else if *source.peek(0) == '\t' {
+					} else if *source.Peek(0) == '\t' {
 						currentIndentLevel += 4
-						source.consume(1)
+						source.Consume(1)
 
 					} else {
 						break
@@ -233,58 +233,58 @@ func lexToken(source *Stream[rune]) []Token {
 
 		}
 
-	case *source.peek(0) == '(':
+	case *source.Peek(0) == '(':
 		parenLevel += 1
 		tokens = append(tokens, Token{LPAREN, strconv.Itoa(parenLevel)})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == ')':
+	case *source.Peek(0) == ')':
 		parenLevel -= 1
 		tokens = append(tokens, Token{RPAREN, strconv.Itoa(parenLevel + 1)})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == '{':
+	case *source.Peek(0) == '{':
 		braceLevel += 1
 		tokens = append(tokens, Token{LBRACE, strconv.Itoa(braceLevel)})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == '}':
+	case *source.Peek(0) == '}':
 		braceLevel -= 1
 		tokens = append(tokens, Token{RBRACE, strconv.Itoa(braceLevel + 1)})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == ',':
+	case *source.Peek(0) == ',':
 		tokens = append(tokens, Token{COMMA, ","})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == '+':
+	case *source.Peek(0) == '+':
 		tokens = append(tokens, Token{PLUS, "+"})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == '-':
+	case *source.Peek(0) == '-':
 		tokens = append(tokens, Token{MINUS, "-"})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == '*':
+	case *source.Peek(0) == '*':
 		tokens = append(tokens, Token{STAR, "*"})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == '/':
+	case *source.Peek(0) == '/':
 		tokens = append(tokens, Token{SLASH, "/"})
-		source.consume(1)
+		source.Consume(1)
 
-	case *source.peek(0) == ':':
+	case *source.Peek(0) == ':':
 		tokens = append(tokens, Token{COLON, ":"})
-		source.consume(1)
-	case *source.peek(0) == '<':
+		source.Consume(1)
+	case *source.Peek(0) == '<':
 		tokens = append(tokens, Token{LESSER_THAN, "<"})
-		source.consume(1)
-	case *source.peek(0) == '>':
+		source.Consume(1)
+	case *source.Peek(0) == '>':
 		tokens = append(tokens, Token{GREATER_THAN, ">"})
-		source.consume(1)
+		source.Consume(1)
 	default:
-		tokens = append(tokens, Token{UNKNOWN, string(*source.peek(0))})
-		source.consume(1)
+		tokens = append(tokens, Token{UNKNOWN, string(*source.Peek(0))})
+		source.Consume(1)
 	}
 	return tokens
 }

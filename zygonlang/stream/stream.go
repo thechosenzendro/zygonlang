@@ -5,7 +5,7 @@ type Stream[T comparable] struct {
 	Contents []T
 }
 
-func (stream *Stream[T]) peek(amount int) *T {
+func (stream *Stream[T]) Peek(amount int) *T {
 	index := stream.Index + amount
 
 	if index >= len(stream.Contents) {
@@ -14,6 +14,6 @@ func (stream *Stream[T]) peek(amount int) *T {
 	return &stream.Contents[index]
 }
 
-func (stream *Stream[T]) consume(amount int) {
+func (stream *Stream[T]) Consume(amount int) {
 	stream.Index += amount
 }

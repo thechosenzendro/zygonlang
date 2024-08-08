@@ -1,4 +1,4 @@
-package zygonlang
+package orderedmap
 
 import "github.com/elliotchance/orderedmap/v2"
 
@@ -7,7 +7,7 @@ type KV[K, V comparable] struct {
 	Value V
 }
 
-func orderedMapFromArgs[K, V comparable](y []KV[K, V]) *orderedmap.OrderedMap[K, V] {
+func OrderedMapFromArgs[K, V comparable](y []KV[K, V]) *orderedmap.OrderedMap[K, V] {
 	x := orderedmap.NewOrderedMap[K, V]()
 	for _, z := range y {
 		x.Set(z.Key, z.Value)
