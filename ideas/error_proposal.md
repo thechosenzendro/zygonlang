@@ -3,8 +3,6 @@
 1 │ using HTTP.
                ^ Expected ( after this
 
-fileName, 
-
    _____Main.zygon_____
 1 │ IO.log(name)
            ^^^^ "name" is not defined

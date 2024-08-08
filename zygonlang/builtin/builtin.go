@@ -248,8 +248,8 @@ func BuiltinLib() *orderedmap.OrderedMap[ast.Name, *orderedmap.OrderedMap[value.
 	builtinLib.Set(ast.Identifier{Value: "IO"}, ioModule)
 	builtinLib.Set(ast.Identifier{Value: "Table"}, tableModule)
 	builtinLib.Set(ast.Identifier{Value: "Program"}, programModule)
-	builtinLib.Set(ast.Identifier{Value: "Errors"}, errorsModule)
-	builtinLib.Set(ast.Identifier{Value: "Types"}, typesModule)
+	builtinLib.Set(ast.Identifier{Value: "Error"}, errorsModule)
+	builtinLib.Set(ast.Identifier{Value: "Type"}, typesModule)
 	builtinLib.Set(ast.Identifier{Value: "Text"}, textModule)
 
 	return builtinLib
