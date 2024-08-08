@@ -1,4 +1,4 @@
-package zygonlang
+package evaluator
 
 import (
 	"bytes"
@@ -7,6 +7,9 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"thechosenzendro/zygonlang/zygonlang/ast"
+	"thechosenzendro/zygonlang/zygonlang/builtin"
+	token "thechosenzendro/zygonlang/zygonlang/tokenizer"
 
 	"github.com/elliotchance/orderedmap/v2"
 )
@@ -50,8 +53,8 @@ func (t Text) Inspect() string { return t.Value }
 
 type Function struct {
 	Parameters *orderedmap.OrderedMap[TableKey, Value]
-	Body       Block
-	Rest       *RestOperator
+	Body       ast.Block
+	Rest       *ast.RestOperator
 	Env        *Environment
 }
 
@@ -111,7 +114,7 @@ func (tk TableKey) Inspect() string { return tk.Value }
 
 type BuiltinFunctionContract struct {
 	Parameters *orderedmap.OrderedMap[TableKey, Value]
-	Rest       *RestOperator
+	Rest       *ast.RestOperator
 }
 
 type BuiltinFunction struct {
@@ -147,19 +150,19 @@ func (e *Environment) Set(name string, val Value) Value {
 	return val
 }
 
-var builtinLib = BuiltinLib()
+var builtinLib = builtin.BuiltinLib()
 
-func Eval(node Node, env *Environment) Value {
+func Eval(node ast.Node, env *Environment) Value {
 	switch node := node.(type) {
-	case Program:
+	case ast.Program:
 		var res Value
 		for _, nd := range node.Body {
 			run := true
 			switch nd := nd.(type) {
-			case AssignmentStatement:
-			case FunctionDeclaration:
-			case UsingStatement:
-			case PubStatement:
+			case ast.AssignmentStatement:
+			case ast.FunctionDeclaration:
+			case ast.UsingStatement:
+			case ast.PubStatement:
 			default:
 				run = false
 				res = Eval(nd, env)
@@ -171,46 +174,46 @@ func Eval(node Node, env *Environment) Value {
 
 		}
 		return res
-	case NumberLiteral:
+	case ast.NumberLiteral:
 		return Number(node)
-	case BooleanLiteral:
+	case ast.BooleanLiteral:
 		return Boolean(node)
-	case TextLiteral:
+	case ast.TextLiteral:
 		str := ""
 		for _, part := range node.Parts {
 			switch part := part.(type) {
-			case TextPart:
+			case ast.TextPart:
 				str = str + part.Value
 			default:
 				str = str + Eval(part, env).Inspect()
 			}
 		}
 		return Text{str}
-	case PrefixExpression:
+	case ast.PrefixExpression:
 		right := Eval(node.Right, env)
 		switch node.Operator {
-		case NOT:
+		case token.NOT:
 			switch right := right.(type) {
 			case Boolean:
 				return Boolean{!right.Value}
 			default:
 				panic("non boolean passed to not")
 			}
-		case MINUS:
+		case token.MINUS:
 			switch right := right.(type) {
 			case Number:
 				return Number{-right.Value}
 			}
 		}
-	case InfixExpression:
+	case ast.InfixExpression:
 		switch node.Operator {
-		case IS:
+		case token.IS:
 			return Boolean{reflect.DeepEqual(Eval(node.Left, env), Eval(node.Right, env))}
-		case IS_NOT:
+		case token.IS_NOT:
 			return Boolean{!reflect.DeepEqual(Eval(node.Left, env), Eval(node.Right, env))}
-		case AND:
+		case token.AND:
 			return Boolean{Eval(node.Left, env).(Boolean).Value && Eval(node.Right, env).(Boolean).Value}
-		case OR:
+		case token.OR:
 			left := Eval(node.Left, env)
 			if left.Type() != BOOL {
 				panic("left arg in or does not eval to a boolean")
@@ -233,32 +236,32 @@ func Eval(node Node, env *Environment) Value {
 
 		if left.Type() == NUMBER && right.Type() == NUMBER {
 			switch node.Operator {
-			case PLUS:
+			case token.PLUS:
 				return Number{left.(Number).Value + right.(Number).Value}
-			case MINUS:
+			case token.MINUS:
 				return Number{left.(Number).Value - right.(Number).Value}
-			case STAR:
+			case token.STAR:
 				return Number{left.(Number).Value * right.(Number).Value}
-			case SLASH:
+			case token.SLASH:
 				return Number{left.(Number).Value / right.(Number).Value}
-			case GREATER_THAN:
+			case token.GREATER_THAN:
 				return Boolean{left.(Number).Value > right.(Number).Value}
-			case LESSER_THAN:
+			case token.LESSER_THAN:
 				return Boolean{left.(Number).Value < right.(Number).Value}
 
 			}
 		}
 
-	case Block:
+	case ast.Block:
 		var res Value
 		for _, nd := range node.Body {
 			run := true
 			switch nd := nd.(type) {
-			case AssignmentStatement:
-			case FunctionDeclaration:
-			case UsingStatement:
+			case ast.AssignmentStatement:
+			case ast.FunctionDeclaration:
+			case ast.UsingStatement:
 				panic("a using statement can only be at the top level")
-			case PubStatement:
+			case ast.PubStatement:
 				panic("a pub statement can only be at the top level")
 			default:
 				run = false
@@ -271,7 +274,7 @@ func Eval(node Node, env *Environment) Value {
 		}
 		return res
 
-	case CaseExpression:
+	case ast.CaseExpression:
 		var subject Value
 		if node.Subject != nil {
 			subject = Eval(node.Subject, env)
@@ -286,7 +289,7 @@ func Eval(node Node, env *Environment) Value {
 
 			} else {
 				switch _pattern := _case.Pattern.(type) {
-				case TableLiteral:
+				case ast.TableLiteral:
 					if subject.Type() == TABLE {
 						ind := 0
 						patternEnviron = Environment{Store: map[string]Value{}, Outer: env}
@@ -303,11 +306,11 @@ func Eval(node Node, env *Environment) Value {
 							if ok {
 								usedKeys[key] = ""
 								switch value := entry.Value.(type) {
-								case Identifier:
+								case ast.Identifier:
 									patternEnviron.Set(value.Value, val)
 									patternResult = Boolean{true}
 
-								case RestOperator:
+								case ast.RestOperator:
 									if value.Value == nil && subject.(Table).Entries.Len() < len(node.Cases) {
 										if patternResult.(Boolean).Value {
 											break caseLoop
@@ -326,7 +329,7 @@ func Eval(node Node, env *Environment) Value {
 												table.Entries.Set(key, value)
 											}
 										}
-										patternEnviron.Set(value.Value.(Identifier).Value, table)
+										patternEnviron.Set(value.Value.(ast.Identifier).Value, table)
 									}
 								default:
 									if !reflect.DeepEqual(val, Eval(entry.Value, env)) {
@@ -362,7 +365,7 @@ func Eval(node Node, env *Environment) Value {
 			return Eval(*node.Default, env)
 		}
 		panic("No truthy case in case expr")
-	case AssignmentStatement:
+	case ast.AssignmentStatement:
 		if _, ok := env.Get(node.Name.Value); !ok {
 			val := Eval(node.Value, env)
 			if val == nil {
@@ -373,13 +376,13 @@ func Eval(node Node, env *Environment) Value {
 		} else {
 			panic(fmt.Sprintf("Cannot reassign identifier %s", node.Name.Value))
 		}
-	case AccessOperator:
+	case ast.AccessOperator:
 		subject := Eval(node.Subject, env)
 		var index Value
 		switch attribute := node.Attribute.(type) {
-		case Identifier:
+		case ast.Identifier:
 			index = TableKey(attribute)
-		case Grouped:
+		case ast.Grouped:
 			index = Eval(attribute.Value, env)
 		}
 		switch subject := subject.(type) {
@@ -393,13 +396,13 @@ func Eval(node Node, env *Environment) Value {
 		default:
 			panic(fmt.Sprintf("Cannot index type %T", subject))
 		}
-	case Identifier:
+	case ast.Identifier:
 		val, ok := env.Get(node.Value)
 		if !ok {
 			panic(fmt.Sprintf("identifier %s not found", node.Value))
 		}
 		return val
-	case FunctionDeclaration:
+	case ast.FunctionDeclaration:
 		fn := Function{Parameters: orderedmap.NewOrderedMap[TableKey, Value](), Body: node.Body, Rest: node.Rest, Env: env}
 
 		for _, name := range node.Parameters.Keys() {
@@ -415,7 +418,7 @@ func Eval(node Node, env *Environment) Value {
 			env.Set(node.Name.Value, fn)
 		}
 		return fn
-	case FunctionCall:
+	case ast.FunctionCall:
 		fn := Eval(node.Fn, env)
 		switch function := fn.(type) {
 		case Function:
@@ -426,7 +429,7 @@ func Eval(node Node, env *Environment) Value {
 				if len(node.Arguments) > i {
 					arg := node.Arguments[i]
 					switch value := arg.Value.(type) {
-					case RestOperator:
+					case ast.RestOperator:
 						_rest := Eval(value.Value, env)
 						if _rest.Type() != TABLE {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
@@ -470,7 +473,7 @@ func Eval(node Node, env *Environment) Value {
 				ind := 0
 				for _, arg := range node.Arguments[i:] {
 					switch value := arg.Value.(type) {
-					case RestOperator:
+					case ast.RestOperator:
 						_rest := Eval(value.Value, env)
 						if _rest.Type() != TABLE {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
@@ -497,7 +500,7 @@ func Eval(node Node, env *Environment) Value {
 						}
 					}
 				}
-				funcEnviron.Set(function.Rest.Value.(Identifier).Value, rest)
+				funcEnviron.Set(function.Rest.Value.(ast.Identifier).Value, rest)
 			}
 			return Eval(function.Body, funcEnviron)
 
@@ -509,7 +512,7 @@ func Eval(node Node, env *Environment) Value {
 				if len(node.Arguments) > i {
 					arg := node.Arguments[i]
 					switch value := arg.Value.(type) {
-					case RestOperator:
+					case ast.RestOperator:
 						_rest := Eval(value.Value, env)
 						if _rest.Type() != TABLE {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
@@ -553,7 +556,7 @@ func Eval(node Node, env *Environment) Value {
 				ind := 0
 				for _, arg := range node.Arguments[i:] {
 					switch value := arg.Value.(type) {
-					case RestOperator:
+					case ast.RestOperator:
 						_rest := Eval(value.Value, env)
 						if _rest.Type() != TABLE {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
@@ -580,18 +583,18 @@ func Eval(node Node, env *Environment) Value {
 						}
 					}
 				}
-				funcEnviron[function.Contract.Rest.Value.(Identifier).Value] = rest
+				funcEnviron[function.Contract.Rest.Value.(ast.Identifier).Value] = rest
 			}
 			return function.Fn(funcEnviron)
 
 		}
-	case TableLiteral:
+	case ast.TableLiteral:
 		entries := orderedmap.NewOrderedMap[Value, Value]()
 		index := -1
 		for _, entry := range node.Entries {
 			if entry.Key == nil {
 				switch val := entry.Value.(type) {
-				case RestOperator:
+				case ast.RestOperator:
 					_table := Eval(val.Value, env)
 					if _table.Type() != TABLE {
 						panic("cannot spread non table values")
@@ -616,12 +619,12 @@ func Eval(node Node, env *Environment) Value {
 			}
 		}
 		return Table{entries}
-	case PubStatement:
+	case ast.PubStatement:
 		switch pub := node.Public.(type) {
-		case AssignmentStatement:
+		case ast.AssignmentStatement:
 			Eval(pub, env)
 			env.Set("pub "+pub.Name.Value, env.Store[pub.Name.Value])
-		case FunctionDeclaration:
+		case ast.FunctionDeclaration:
 			if pub.Name != nil {
 				Eval(pub, env)
 				env.Set("pub "+pub.Name.Value, env.Store[pub.Name.Value])
@@ -631,7 +634,7 @@ func Eval(node Node, env *Environment) Value {
 		default:
 			panic(fmt.Sprintf("%T cannot be made public", pub))
 		}
-	case UsingStatement:
+	case ast.UsingStatement:
 		libRoot := "./lib"
 
 		for _, module := range node.Modules {
@@ -664,7 +667,7 @@ func Eval(node Node, env *Environment) Value {
 
 			}
 		}
-	case RestOperator:
+	case ast.RestOperator:
 		panic("rest operator is not a normal expression and cant be used on its own. ")
 	default:
 		panic(fmt.Sprintf("eval error %T", node))
@@ -692,29 +695,29 @@ func publicToTable(e *Environment) Table {
 	return table
 }
 
-func unwrap(m Name, toPut Table, env *Environment) {
+func unwrap(m ast.Name, toPut Table, env *Environment) {
 	switch m := m.(type) {
-	case AccessOperator:
-		unwrap(m.Attribute.(Name), toPut, env)
-	case Identifier:
+	case ast.AccessOperator:
+		unwrap(m.Attribute.(ast.Name), toPut, env)
+	case ast.Identifier:
 		env.Set(m.Value, toPut)
 	}
 }
 
-func getModPath(module Name) string {
+func getModPath(module ast.Name) string {
 	switch mod := module.(type) {
-	case Identifier:
+	case ast.Identifier:
 		return "/" + mod.Value + ".zygon"
-	case AccessOperator:
-		return "/" + mod.Subject.(Identifier).Value + "/" + getModPath(mod.Attribute.(Name))
+	case ast.AccessOperator:
+		return "/" + mod.Subject.(ast.Identifier).Value + "/" + getModPath(mod.Attribute.(ast.Name))
 	}
 	return ""
 }
 
 func Exec(sourceCode string) (Value, *Environment) {
 	// the lexer needs to lex indents correctly
-	tokens := Tokenize(sourceCode + "\n")
-	ast := Parse(&tokens)
+	tokens := token.Tokenize(sourceCode + "\n")
+	ast := ast.Parse(&tokens)
 	env := &Environment{Store: make(map[string]Value), Outer: nil}
 
 	return Eval(ast, env), env

@@ -1,7 +1,8 @@
-package zygonlang
+package token
 
 import (
 	"strconv"
+	"thechosenzendro/zygonlang/zygonlang/stream"
 	"unicode"
 )
 
@@ -54,14 +55,14 @@ var parenLevel = 0
 var braceLevel = 0
 var indentLevel = []int{0}
 
-func Tokenize(sourceCode string) Stream[Token] {
-	source := &Stream[rune]{0, []rune(sourceCode)}
-	tokens := Stream[Token]{0, []Token{}}
+func Tokenize(sourceCode string) stream.Stream[Token] {
+	source := &stream.Stream[rune]{0, []rune(sourceCode)}
+	tokens := &stream.Stream[Token]{0, []Token{}}
 	for source.peek(0) != nil {
 		tokens.Contents = append(tokens.Contents, lexToken(source)...)
 	}
 	tokens.Contents = append(tokens.Contents, Token{EOF, ""})
-	return tokens
+	return *tokens
 }
 
 func isToken(tokens *Stream[Token], tokenType TokenType, amount int) bool {

@@ -1,11 +1,11 @@
-package zygonlang
+package stream
 
 type Stream[T comparable] struct {
 	Index    int
 	Contents []T
 }
 
-func (stream Stream[T]) peek(amount int) *T {
+func (stream *Stream[T]) peek(amount int) *T {
 	index := stream.Index + amount
 
 	if index >= len(stream.Contents) {

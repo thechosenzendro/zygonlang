@@ -1,4 +1,4 @@
-package zygonlang
+package ast
 
 import (
 	"fmt"

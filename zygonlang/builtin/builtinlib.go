@@ -1,16 +1,17 @@
-package zygonlang
+package builtin
 
 import (
 	"bufio"
 	"fmt"
 	"os"
 	"strings"
+	"thechosenzendro/zygonlang/zygonlang/evaluator"
 
 	"github.com/elliotchance/orderedmap/v2"
 	"github.com/tiendc/go-deepcopy"
 )
 
-func BuiltinLib() *orderedmap.OrderedMap[Name, *orderedmap.OrderedMap[Value, Value]] {
+func BuiltinLib() *orderedmap.OrderedMap[evaluator.Name, *orderedmap.OrderedMap[Value, Value]] {
 	builtinLib := orderedmap.NewOrderedMap[Name, *orderedmap.OrderedMap[Value, Value]]()
 	// IO module
 	ioModule := orderedmap.NewOrderedMap[Value, Value]()

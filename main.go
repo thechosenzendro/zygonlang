@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
-	"thechosenzendro/zygonlang/zygonlang"
+	"thechosenzendro/zygonlang/zygonlang/evaluator"
 )
 
 func main() {
@@ -13,7 +13,7 @@ func main() {
 			panic(err)
 		}
 
-		val, _ := zygonlang.Exec(string(sourceCode))
+		val, _ := evaluator.Exec(string(sourceCode))
 		if val != nil {
 			fmt.Println(val.Inspect())
 		} else {
