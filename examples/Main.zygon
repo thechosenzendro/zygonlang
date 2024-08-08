@@ -2,6 +2,7 @@ using IO, Program
 
 x(y):
     z: y
-    Program.crash(z, exit_code: 17)
+    rest: {exit_code: 17}
+    Program.crash(z, ...rest)
 
 x(1)

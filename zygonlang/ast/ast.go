@@ -344,6 +344,9 @@ func parseFunction(tokens *stream.Stream[token.Token], fn Expression) Expression
 				expr.Parameters.Set(name, param_default)
 
 			} else if token.IsToken(tokens, token.REST, 0) {
+				if !(token.IsToken(tokens, token.RPAREN, 0) && tokens.Peek(0).Value == parenLevel) {
+					panic("a rest operator must be the last thing in function declaration")
+				}
 				rest := parseRestOperator(tokens).(RestOperator)
 				expr.Rest = &rest
 				tokens.Consume(1)
@@ -364,15 +367,22 @@ func parseFunction(tokens *stream.Stream[token.Token], fn Expression) Expression
 
 		parenLevel := tokens.Peek(0).Value
 		tokens.Consume(1)
+		onlyNamedNow := false
 		for !(token.IsToken(tokens, token.RPAREN, 0) && tokens.Peek(0).Value == parenLevel) {
+			isNamed := false
 			if token.IsToken(tokens, token.IDENT, 0) {
 				argument := FunctionCallArgument{}
 				if token.IsToken(tokens, token.COLON, 1) {
+					onlyNamedNow = true
+					isNamed = true
 					switch name := parseIdentifier(tokens).(type) {
 					case Identifier:
-						argument.Name = &Identifier{name.Value}
+						argument.Name = &name
 					}
 					tokens.Consume(2)
+				}
+				if !isNamed && onlyNamedNow {
+					panic("cannot put positional arguments after a named one")
 				}
 				argument.Value = parseExpression(tokens, LOWEST)
 				tokens.Consume(1)
@@ -383,10 +393,19 @@ func parseFunction(tokens *stream.Stream[token.Token], fn Expression) Expression
 				}
 				expr.Arguments = append(expr.Arguments, argument)
 			} else {
+				if !isNamed && onlyNamedNow {
+					panic("cannot put positional arguments after a named one")
+				}
 				argument := FunctionCallArgument{}
 				argument.Name = nil
 				argument.Value = parseExpression(tokens, LOWEST)
 				tokens.Consume(1)
+				switch argument.Value.(type) {
+				case RestOperator:
+					if !(token.IsToken(tokens, token.RPAREN, 0) && tokens.Peek(0).Value == parenLevel) {
+						panic("a rest operator must be the last thing in function call")
+					}
+				}
 				if token.IsToken(tokens, token.COMMA, 0) {
 					tokens.Consume(1)
 				} else if !(token.IsToken(tokens, token.RPAREN, 0) && tokens.Peek(0).Value == parenLevel) {

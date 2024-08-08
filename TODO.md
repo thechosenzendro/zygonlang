@@ -9,6 +9,7 @@
 - decide on the style rules of the language [DONE]
 - add error value [DONE]
 - organize the code better [DONE]
+- considering giving the access operator free will
 - allow use of user defined modules (search first at project root than lib root) [DONE]
 - fix calling functions in case patterns [DONE]
 - add a default keyword for case [DONE]
@@ -44,3 +45,7 @@ also can be used in table literal as a "rest" matcher [DONE]
 - add some way of documentation
 - add package management
 - enforce rules (using and pub only at the top, named arguments after positional, rest after everything)
+using and pub only at the top [DONE]
+function call named args after positional [DONE]
+function call rest after everything [DONE]
+function declaration rest after everything [DONE]
