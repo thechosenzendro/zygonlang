@@ -44,6 +44,7 @@ also can be used in table literal as a "rest" matcher [DONE]
 - proper errors
 - add some way of documentation
 - add package management
+- add rule that every case needs a default
 - enforce rules (using and pub only at the top, named arguments after positional, rest after everything)
 using and pub only at the top [DONE]
 function call named args after positional [DONE]
