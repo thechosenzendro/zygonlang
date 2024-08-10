@@ -7,6 +7,7 @@ import (
 	"strings"
 	"thechosenzendro/zygonlang/zygonlang/ast"
 	ordmap "thechosenzendro/zygonlang/zygonlang/orderedmap"
+	"thechosenzendro/zygonlang/zygonlang/types"
 	"thechosenzendro/zygonlang/zygonlang/value"
 
 	"github.com/elliotchance/orderedmap/v2"
@@ -117,7 +118,7 @@ func BuiltinLib() *orderedmap.OrderedMap[ast.Name, *orderedmap.OrderedMap[value.
 					if key == args["index"] {
 						continue
 					}
-					if key.Type() == value.NUMBER {
+					if key.Type() == types.NUMBER {
 						newTable.Entries.Set(value.Number{Value: float64(ind)}, entryValue)
 						ind += 1
 					} else {
@@ -151,10 +152,10 @@ func BuiltinLib() *orderedmap.OrderedMap[ast.Name, *orderedmap.OrderedMap[value.
 		},
 	)
 
-	// Errors module
-	errorsModule := orderedmap.NewOrderedMap[value.Value, value.Value]()
-	// Errors.error
-	errorsModule.Set(
+	// Error module
+	errorModule := orderedmap.NewOrderedMap[value.Value, value.Value]()
+	// Error.error
+	errorModule.Set(
 		value.TableKey{Value: "error"},
 		value.BuiltinFunction{
 			Contract: value.BuiltinFunctionContract{
@@ -165,7 +166,7 @@ func BuiltinLib() *orderedmap.OrderedMap[ast.Name, *orderedmap.OrderedMap[value.
 			},
 			Fn: func(args map[string]value.Value) value.Value {
 				message := args["message"]
-				if message.Type() != value.TEXT {
+				if message.Type() != types.TEXT {
 					panic("you need to supply text to Errors.error")
 				}
 				return value.Error{Value: message.(value.Text).Value}
@@ -173,22 +174,22 @@ func BuiltinLib() *orderedmap.OrderedMap[ast.Name, *orderedmap.OrderedMap[value.
 		},
 	)
 
-	// Types module
-	typesModule := orderedmap.NewOrderedMap[value.Value, value.Value]()
-	// Types.number
-	typesModule.Set(value.TableKey{Value: "number"}, value.TableKey{Value: value.NUMBER})
-	// Types.boolean
-	typesModule.Set(value.TableKey{Value: "boolean"}, value.TableKey{Value: value.BOOL})
-	// Types.text
-	typesModule.Set(value.TableKey{Value: "text"}, value.TableKey{Value: value.TEXT})
-	// Types.function
-	typesModule.Set(value.TableKey{Value: "function"}, value.TableKey{Value: value.FUNCTION})
-	// Types.table
-	typesModule.Set(value.TableKey{Value: "table"}, value.TableKey{Value: value.TABLE})
-	// Types.error
-	typesModule.Set(value.TableKey{Value: "error"}, value.TableKey{Value: value.ERROR})
-	// Types.type
-	typesModule.Set(
+	// Type module
+	typeModule := orderedmap.NewOrderedMap[value.Value, value.Value]()
+	// Type.number
+	typeModule.Set(value.TableKey{Value: "number"}, value.Type{Value: types.NUMBER})
+	// Type.boolean
+	typeModule.Set(value.TableKey{Value: "boolean"}, value.Type{Value: types.BOOL})
+	// Type.text
+	typeModule.Set(value.TableKey{Value: "text"}, value.Type{Value: types.TEXT})
+	// Type.function
+	typeModule.Set(value.TableKey{Value: "function"}, value.Type{Value: types.FUNCTION})
+	// Type.table
+	typeModule.Set(value.TableKey{Value: "table"}, value.Type{Value: types.TABLE})
+	// Type.error
+	typeModule.Set(value.TableKey{Value: "error"}, value.Type{Value: types.ERROR})
+	// Type.type
+	typeModule.Set(
 		value.TableKey{Value: "type"},
 		value.BuiltinFunction{
 			Contract: value.BuiltinFunctionContract{
@@ -200,19 +201,21 @@ func BuiltinLib() *orderedmap.OrderedMap[ast.Name, *orderedmap.OrderedMap[value.
 			Fn: func(args map[string]value.Value) value.Value {
 				switch args["value"].(type) {
 				case value.Number:
-					return value.TableKey{Value: value.NUMBER}
+					return value.Type{Value: types.NUMBER}
 				case value.Boolean:
-					return value.TableKey{Value: value.BOOL}
+					return value.Type{Value: types.BOOL}
 				case value.Text:
-					return value.TableKey{Value: value.TEXT}
+					return value.Type{Value: types.TEXT}
 				case value.Function:
-					return value.TableKey{Value: value.FUNCTION}
+					return value.Type{Value: types.FUNCTION}
 				case value.BuiltinFunction:
-					return value.TableKey{Value: value.FUNCTION}
+					return value.Type{Value: types.FUNCTION}
 				case value.Table:
-					return value.TableKey{Value: value.TABLE}
+					return value.Type{Value: types.TABLE}
 				case value.Error:
-					return value.TableKey{Value: value.ERROR}
+					return value.Type{Value: types.ERROR}
+				case value.Type:
+					return value.Type{Value: types.TYPE}
 				default:
 					return value.Error{Value: "unknown type"}
 				}
@@ -248,8 +251,8 @@ func BuiltinLib() *orderedmap.OrderedMap[ast.Name, *orderedmap.OrderedMap[value.
 	builtinLib.Set(ast.Identifier{Value: "IO"}, ioModule)
 	builtinLib.Set(ast.Identifier{Value: "Table"}, tableModule)
 	builtinLib.Set(ast.Identifier{Value: "Program"}, programModule)
-	builtinLib.Set(ast.Identifier{Value: "Error"}, errorsModule)
-	builtinLib.Set(ast.Identifier{Value: "Type"}, typesModule)
+	builtinLib.Set(ast.Identifier{Value: "Error"}, errorModule)
+	builtinLib.Set(ast.Identifier{Value: "Type"}, typeModule)
 	builtinLib.Set(ast.Identifier{Value: "Text"}, textModule)
 
 	return builtinLib

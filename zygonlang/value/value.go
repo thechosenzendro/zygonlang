@@ -5,19 +5,9 @@ import (
 	"fmt"
 	"strconv"
 	"thechosenzendro/zygonlang/zygonlang/ast"
+	"thechosenzendro/zygonlang/zygonlang/types"
 
 	"github.com/elliotchance/orderedmap/v2"
-)
-
-const (
-	NUMBER    = "Number"
-	BOOL      = "Boolean"
-	TEXT      = "Text"
-	FUNCTION  = "Function"
-	TABLE     = "Table"
-	TABLE_KEY = "TableKey"
-	BUILTIN   = "BuiltinFunction"
-	ERROR     = "Error"
 )
 
 type Value interface {
@@ -29,21 +19,21 @@ type Number struct {
 	Value float64
 }
 
-func (n Number) Type() string    { return NUMBER }
+func (n Number) Type() string    { return types.NUMBER }
 func (n Number) Inspect() string { return strconv.FormatFloat(n.Value, 'f', -1, 64) }
 
 type Boolean struct {
 	Value bool
 }
 
-func (b Boolean) Type() string    { return BOOL }
+func (b Boolean) Type() string    { return types.BOOL }
 func (b Boolean) Inspect() string { return fmt.Sprintf("%t", b.Value) }
 
 type Text struct {
 	Value string
 }
 
-func (t Text) Type() string    { return TEXT }
+func (t Text) Type() string    { return types.TEXT }
 func (t Text) Inspect() string { return t.Value }
 
 type Function struct {
@@ -53,7 +43,7 @@ type Function struct {
 	Env        *Environment
 }
 
-func (f Function) Type() string    { return FUNCTION }
+func (f Function) Type() string    { return types.FUNCTION }
 func (f Function) Inspect() string { return "Function Declaration" }
 
 type Table struct {
@@ -70,7 +60,7 @@ func indent() string {
 	return str
 }
 
-func (t Table) Type() string { return TABLE }
+func (t Table) Type() string { return types.TABLE }
 func (t Table) Inspect() string {
 	var out bytes.Buffer
 	out.WriteString("{\n")
@@ -104,7 +94,7 @@ type TableKey struct {
 	Value string
 }
 
-func (tk TableKey) Type() string    { return TABLE_KEY }
+func (tk TableKey) Type() string    { return types.TABLE_KEY }
 func (tk TableKey) Inspect() string { return tk.Value }
 
 type BuiltinFunctionContract struct {
@@ -117,15 +107,22 @@ type BuiltinFunction struct {
 	Fn       func(args map[string]Value) Value
 }
 
-func (b BuiltinFunction) Type() string    { return BUILTIN }
+func (b BuiltinFunction) Type() string    { return types.BUILTIN }
 func (b BuiltinFunction) Inspect() string { return "Builtin" }
 
 type Error struct {
 	Value string
 }
 
-func (e Error) Type() string    { return ERROR }
+func (e Error) Type() string    { return types.ERROR }
 func (e Error) Inspect() string { return fmt.Sprintf("Error(%s)", e.Value) }
+
+type Type struct {
+	Value string
+}
+
+func (t Type) Type() string    { return types.TYPE }
+func (t Type) Inspect() string { return fmt.Sprintf("Type(%s)", t.Value) }
 
 type Environment struct {
 	Store map[string]Value
