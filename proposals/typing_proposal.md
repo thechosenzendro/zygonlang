@@ -83,7 +83,9 @@ InfixExpression:
 FunctionDeclaration:
     first, for every argument, it resolves all of the possible types and creates variants (including defaults)
     2. Resolves block
-FunctionCall: The return type of FunctionDeclaration
+FunctionCall:
+    checks every argument,
+    returns the return type of FunctionDeclaration
 
 TableLiteral:
     for every entry, resolves type and creates variants (also asserts the type from the entry value)

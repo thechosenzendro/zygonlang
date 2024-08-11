@@ -1,8 +1,3 @@
-using IO, Program
-
 x(y):
-    z: y
-    rest: {exit_code: 17}
-    Program.crash(z, ...rest)
-
-x(1)
+    y(1)
+x((z): z)

@@ -5,9 +5,11 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"thechosenzendro/zygonlang/zygonlang/analyzer"
 	"thechosenzendro/zygonlang/zygonlang/ast"
 	"thechosenzendro/zygonlang/zygonlang/builtin"
 	"thechosenzendro/zygonlang/zygonlang/token"
+	"thechosenzendro/zygonlang/zygonlang/types"
 	"thechosenzendro/zygonlang/zygonlang/value"
 
 	"github.com/elliotchance/orderedmap/v2"
@@ -78,14 +80,14 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 			return value.Boolean{Value: Eval(node.Left, env).(value.Boolean).Value && Eval(node.Right, env).(value.Boolean).Value}
 		case token.OR:
 			left := Eval(node.Left, env)
-			if left.Type() != value.BOOL {
+			if left.Type() != types.BOOL {
 				panic("left arg in or does not eval to a boolean")
 			}
 			if left.Inspect() == "true" {
 				return value.Boolean{Value: true}
 			}
 			right := Eval(node.Right, env)
-			if right.Type() != value.BOOL {
+			if right.Type() != types.BOOL {
 				panic("right arg in or does not eval to a boolean")
 			}
 			if right.Inspect() != "true" {
@@ -97,7 +99,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 		left := Eval(node.Left, env)
 		right := Eval(node.Right, env)
 
-		if left.Type() == value.NUMBER && right.Type() == value.NUMBER {
+		if left.Type() == types.NUMBER && right.Type() == types.NUMBER {
 			switch node.Operator {
 			case token.PLUS:
 				return value.Number{Value: left.(value.Number).Value + right.(value.Number).Value}
@@ -153,7 +155,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 			} else {
 				switch _pattern := _case.Pattern.(type) {
 				case ast.TableLiteral:
-					if subject.Type() == value.TABLE {
+					if subject.Type() == types.TABLE {
 						ind := 0
 						patternEnviron = value.Environment{Store: map[string]value.Value{}, Outer: env}
 						usedKeys := map[value.Value]string{}
@@ -184,7 +186,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 										i := 0
 										for _, key := range subject.(value.Table).Entries.Keys() {
 											if _, ok := usedKeys[key]; !ok {
-												if key.Type() == value.NUMBER {
+												if key.Type() == types.NUMBER {
 													key = value.Number{Value: float64(i)}
 													i += 1
 												}
@@ -217,7 +219,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 			if patternResult == nil {
 				panic("pattern does not eval to anything")
 			}
-			if patternResult.Type() != value.BOOL {
+			if patternResult.Type() != types.BOOL {
 				panic("pattern result is not a boolean")
 			}
 			if patternResult.Inspect() == "true" {
@@ -294,7 +296,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 					switch argValue := arg.Value.(type) {
 					case ast.RestOperator:
 						_rest := Eval(argValue.Value, env)
-						if _rest.Type() != value.TABLE {
+						if _rest.Type() != types.TABLE {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
 						}
 						rest := _rest.(value.Table)
@@ -338,7 +340,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 					switch argValue := arg.Value.(type) {
 					case ast.RestOperator:
 						_rest := Eval(argValue.Value, env)
-						if _rest.Type() != value.TABLE {
+						if _rest.Type() != types.TABLE {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
 						}
 						rest := _rest.(value.Table)
@@ -377,7 +379,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 					switch argValue := arg.Value.(type) {
 					case ast.RestOperator:
 						_rest := Eval(argValue.Value, env)
-						if _rest.Type() != value.TABLE {
+						if _rest.Type() != types.TABLE {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
 						}
 						rest := _rest.(value.Table)
@@ -421,7 +423,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 					switch argValue := arg.Value.(type) {
 					case ast.RestOperator:
 						_rest := Eval(argValue.Value, env)
-						if _rest.Type() != value.TABLE {
+						if _rest.Type() != types.TABLE {
 							panic(fmt.Sprintf("cannot spread %T", _rest))
 						}
 						rest := _rest.(value.Table)
@@ -459,7 +461,7 @@ func Eval(node ast.Node, env *value.Environment) value.Value {
 				switch val := entry.Value.(type) {
 				case ast.RestOperator:
 					_table := Eval(val.Value, env)
-					if _table.Type() != value.TABLE {
+					if _table.Type() != types.TABLE {
 						panic("cannot spread non table values")
 					}
 					table := _table.(value.Table)
@@ -580,8 +582,10 @@ func getModPath(module ast.Name) string {
 func Exec(sourceCode string) (value.Value, *value.Environment) {
 	// the lexer needs to lex indents correctly
 	tokens := token.Tokenize(sourceCode + "\n")
-	ast := ast.Parse(&tokens)
-	env := &value.Environment{Store: make(map[string]value.Value), Outer: nil}
 
+	ast := ast.Parse(&tokens)
+	ast = analyzer.Analyze(ast)
+
+	env := &value.Environment{Store: make(map[string]value.Value), Outer: nil}
 	return Eval(ast, env), env
 }
