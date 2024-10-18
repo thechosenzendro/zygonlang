@@ -19,7 +19,7 @@ enum Token {
 fn get(text: &String, i: usize) -> char {
     text.chars().nth(i).expect("No character found")
 }
-
+// probably change this?
 fn tokenize(src: &String) -> Vec<Token>{
     let mut tokens: Vec<Token> = Vec::new();
     let mut i = 0;
